@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Plasmoid Battlers</title>
+    <meta name="description" content="Collect glowing Plasmoids, manage your team, and battle rival battlers.">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main id="app" class="app-shell">
+      <section class="stage-wrap" aria-label="Plasmoid Battlers game stage">
+        <canvas id="game-canvas" width="1280" height="720"></canvas>
+        <div id="toast" class="toast" aria-live="polite"></div>
+      </section>
+
+      <section class="control-dock" aria-label="Game controls">
+        <header class="topline">
+          <div>
+            <p class="eyebrow">Plasmoid Battlers</p>
+            <h1 id="screen-title">Home</h1>
+          </div>
+          <div class="resource-row">
+            <span class="resource-pill" title="Gold coins">
+              <span class="coin-dot"></span>
+              <strong id="gold-count">0</strong>
+            </span>
+            <button id="sound-toggle" class="icon-btn" type="button" title="Toggle sound" aria-label="Toggle sound">♪</button>
+            <button id="fullscreen-btn" class="icon-btn" type="button" title="Fullscreen" aria-label="Fullscreen">⛶</button>
+          </div>
+        </header>
+
+        <nav class="mode-tabs" aria-label="Mode selection">
+          <button class="mode-tab active" type="button" data-mode="home">Home</button>
+          <button class="mode-tab" type="button" data-mode="battle">Battle</button>
+          <button class="mode-tab" type="button" data-mode="gacha">Gacha</button>
+          <button class="mode-tab" type="button" data-mode="manage">Manage</button>
+          <button class="mode-tab" type="button" data-mode="profile">Profile</button>
+        </nav>
+
+        <div id="panel-home" class="panel active">
+          <div class="action-grid">
+            <button class="primary-action" type="button" data-mode="battle">Start Battle</button>
+            <button class="primary-action" type="button" data-mode="gacha">Use UAP Dogwhistle</button>
+            <button class="primary-action" type="button" data-mode="manage">Manage Team</button>
+            <button class="primary-action" type="button" data-mode="profile">Player Profile</button>
+          </div>
+          <div class="compact-stats" id="home-summary"></div>
+        </div>
+
+        <div id="panel-battle" class="panel">
+          <div id="battle-setup" class="battle-controls">
+            <button id="new-battle-btn" class="primary-action" type="button">Find Rival Team</button>
+          </div>
+          <div id="battle-actions" class="battle-controls hidden">
+            <button id="attack-btn" class="primary-action danger" type="button">Attack</button>
+            <div id="switch-buttons" class="switch-row"></div>
+          </div>
+          <div id="battle-log" class="battle-log" aria-live="polite"></div>
+        </div>
+
+        <div id="panel-gacha" class="panel">
+          <div class="gacha-box">
+            <p class="mode-copy">Spend 3 gold to call a new Plasmoid from the aurora with the UAP Dogwhistle.</p>
+            <button id="summon-btn" class="primary-action" type="button">Summon - 3 Gold</button>
+          </div>
+          <div id="summon-result" class="result-card hidden"></div>
+        </div>
+
+        <div id="panel-manage" class="panel">
+          <p class="mode-copy">Choose exactly three Plasmoids for your active battle team.</p>
+          <div id="team-slots" class="team-slots"></div>
+          <div id="vat-list" class="vat-list"></div>
+        </div>
+
+        <div id="panel-profile" class="panel">
+          <div id="profile-grid" class="profile-grid"></div>
+          <button id="new-game-btn" class="text-danger" type="button">Start New Game</button>
+        </div>
+      </section>
+    </main>
+
+    <div id="battle-summary-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="battle-summary-title">
+      <div class="modal-body">
+        <h2 id="battle-summary-title">Battle Complete</h2>
+        <div id="battle-summary-art" class="summary-art"></div>
+        <div id="battle-summary-stats" class="summary-stats"></div>
+        <button id="close-summary-btn" class="primary-action" type="button">Continue</button>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
