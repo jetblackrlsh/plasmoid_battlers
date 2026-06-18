@@ -155,6 +155,12 @@ h1 {
   box-shadow: 0 0 14px rgba(255, 212, 71, 0.8);
 }
 
+.rank-pill {
+  gap: 4px;
+  background: linear-gradient(135deg, #17152c, #7c4dff);
+  color: #fff;
+}
+
 .icon-btn {
   width: 42px;
   cursor: pointer;
@@ -279,6 +285,38 @@ h1 {
   margin-bottom: 12px;
 }
 
+.risk-toggle,
+.power-summary {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 12px;
+  padding: 10px;
+  border: 1px solid rgba(23, 21, 44, 0.12);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.72);
+  font-weight: 850;
+}
+
+.risk-toggle {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.risk-toggle small {
+  grid-column: 1 / -1;
+  color: rgba(23, 21, 44, 0.68);
+  font-weight: 750;
+}
+
+.power-summary {
+  grid-template-columns: 1fr;
+}
+
+.power-summary span {
+  color: rgba(23, 21, 44, 0.72);
+  font-size: 0.9rem;
+}
+
 .planned-setup,
 .guide-card {
   margin-top: 12px;
@@ -376,6 +414,34 @@ h1 {
   border: 2px solid white;
 }
 
+.type-chart-art {
+  width: 100%;
+  display: block;
+  margin: 8px 0 12px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(23, 21, 44, 0.16);
+  box-shadow: 0 12px 28px rgba(23, 21, 44, 0.18);
+}
+
+.modal-chart-art {
+  max-height: 40vh;
+  object-fit: contain;
+  background: #101026;
+}
+
+.chart-modal-body {
+  width: min(860px, 100%);
+}
+
+.chart-modal-body .type-row {
+  font-size: 0.82rem;
+  grid-template-columns: 18px 56px minmax(0, 1fr);
+}
+
+.chart-modal-body .primary-action {
+  margin-top: 10px;
+}
+
 .mini-btn {
   border: 0;
   border-radius: var(--radius);
@@ -390,6 +456,11 @@ h1 {
 .forfeit-btn {
   width: 100%;
   background: linear-gradient(135deg, #17152c, #ff3864);
+}
+
+.chart-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #1749ff, #00d9ff);
 }
 
 .profile-grid {

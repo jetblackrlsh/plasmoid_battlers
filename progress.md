@@ -9,6 +9,7 @@ Progress:
 - Added a How To Play page covering Blind Battles, Planned Battles, type advantages, speed, switching, and team building.
 - Split Battle Mode into Blind Battles and Planned Battles; Planned Battles scout the enemy team first, allow a temporary counter-pick squad from the vat, then start battle with that matchup.
 - Added active-battle hover inspection for active Plasmoid type and speed, a mid-battle forfeit action, and enemy team generation scaled to a comparable weighted stat power level.
+- Added generated type-chart art, generated per-type Plasmoid sprite assets, ranked/unranked battle variants, optional Risk Battle rules, rank level tracking, and visible team/enemy power summaries.
 
 TODO:
 - Commit and push to `origin` when requested.

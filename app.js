@@ -28,6 +28,16 @@ const ART = {
   gacha: "assets/art/summon.png",
   victory: "assets/art/victory.png",
   defeat: "assets/art/defeat.png",
+  typeChart: "assets/art/type-chart.png",
+};
+
+const SPRITES = {
+  Solar: "assets/art/sprite-solar.png",
+  Volt: "assets/art/sprite-volt.png",
+  Toxic: "assets/art/sprite-toxic.png",
+  Lunar: "assets/art/sprite-lunar.png",
+  Flare: "assets/art/sprite-flare.png",
+  Frost: "assets/art/sprite-frost.png",
 };
 
 const canvas = document.getElementById("game-canvas");
@@ -35,6 +45,7 @@ const ctx = canvas.getContext("2d");
 const ui = {
   title: document.getElementById("screen-title"),
   gold: document.getElementById("gold-count"),
+  rank: document.getElementById("rank-level"),
   tabs: [...document.querySelectorAll(".mode-tab")],
   panels: [...document.querySelectorAll(".panel")],
   toast: document.getElementById("toast"),
@@ -42,11 +53,19 @@ const ui = {
   fullscreen: document.getElementById("fullscreen-btn"),
   homeSummary: document.getElementById("home-summary"),
   blindBattle: document.getElementById("blind-battle-btn"),
+  blindRanked: document.getElementById("blind-ranked-btn"),
   plannedBattle: document.getElementById("planned-battle-btn"),
+  plannedRanked: document.getElementById("planned-ranked-btn"),
+  riskToggle: document.getElementById("risk-toggle"),
+  riskStatus: document.getElementById("risk-status"),
+  setupChart: document.getElementById("setup-chart-btn"),
+  battleChart: document.getElementById("battle-chart-btn"),
+  battlePowerSummary: document.getElementById("battle-power-summary"),
   plannedSetup: document.getElementById("planned-setup"),
   plannedEnemyList: document.getElementById("planned-enemy-list"),
   plannedTeamSlots: document.getElementById("planned-team-slots"),
   plannedVatList: document.getElementById("planned-vat-list"),
+  plannedPowerSummary: document.getElementById("planned-power-summary"),
   startPlannedBattle: document.getElementById("start-planned-battle-btn"),
   battleSetup: document.getElementById("battle-setup"),
   battleActions: document.getElementById("battle-actions"),
@@ -57,8 +76,10 @@ const ui = {
   summon: document.getElementById("summon-btn"),
   summonResult: document.getElementById("summon-result"),
   teamSlots: document.getElementById("team-slots"),
+  teamPowerSummary: document.getElementById("team-power-summary"),
   vatList: document.getElementById("vat-list"),
   typeChart: document.getElementById("type-chart"),
+  modalTypeChart: document.getElementById("modal-type-chart"),
   profileGrid: document.getElementById("profile-grid"),
   newGame: document.getElementById("new-game-btn"),
   modal: document.getElementById("battle-summary-modal"),
@@ -66,9 +87,12 @@ const ui = {
   summaryArt: document.getElementById("battle-summary-art"),
   summaryStats: document.getElementById("battle-summary-stats"),
   closeSummary: document.getElementById("close-summary-btn"),
+  typeChartModal: document.getElementById("type-chart-modal"),
+  closeTypeChart: document.getElementById("close-type-chart-btn"),
 };
 
 const images = {};
+const sprites = {};
 let save = loadSave();
 let mode = "home";
 let t = 0;
@@ -89,6 +113,12 @@ function defaultProfile() {
     battles: 0,
     blindBattles: 0,
     plannedBattles: 0,
+    rankedBattles: 0,
+    rankedWins: 0,
+    rankedLosses: 0,
+    riskBattles: 0,
+    riskCaptures: 0,
+    riskLosses: 0,
     wins: 0,
     losses: 0,
     plasmoidsDefeated: 0,
@@ -111,6 +141,7 @@ function makeStarterSave() {
   ];
   return {
     gold: 3,
+    rankLevel: 100,
     vat: starters,
     team: starters.map((p) => p.id),
     profile: defaultProfile(),
@@ -123,6 +154,7 @@ function loadSave() {
     if (!raw) return makeStarterSave();
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed.vat) || parsed.vat.length < 3) return makeStarterSave();
+    parsed.rankLevel = Number.isFinite(parsed.rankLevel) ? parsed.rankLevel : 100;
     parsed.profile = { ...defaultProfile(), ...(parsed.profile || {}) };
     parsed.team = Array.isArray(parsed.team)
       ? parsed.team.filter((id) => parsed.vat.some((p) => p.id === id)).slice(0, 3)
@@ -193,6 +225,41 @@ function teamPower(team) {
   return team.reduce((total, p) => total + plasmoidPower(p), 0);
 }
 
+function rankDeltaForPower(power) {
+  return Math.max(1, Math.round(power / 100));
+}
+
+function battleLabel(source = battle) {
+  if (!source) return "Battle";
+  const ladder = source.ranked ? "Ranked" : "Unranked";
+  const risk = source.risk ? " Risk" : "";
+  const modeName = source.kind === "planned" ? "Planned" : "Blind";
+  return `${ladder}${risk} ${modeName} Battle`;
+}
+
+function sanitizeCapturedPlasmoid(p) {
+  return {
+    id: `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    name: p.name,
+    type: p.type,
+    rank: p.rank,
+    hue: p.hue,
+    maxHp: p.maxHp,
+    attack: p.attack,
+    defense: p.defense,
+    speed: p.speed,
+    seed: p.seed,
+  };
+}
+
+function normalizeTeamAfterVatChange() {
+  const available = new Set(save.vat.map((p) => p.id));
+  save.team = save.team.filter((id) => available.has(id)).slice(0, 3);
+  save.vat.forEach((p) => {
+    if (save.team.length < 3 && !save.team.includes(p.id)) save.team.push(p.id);
+  });
+}
+
 function tuneEnemyStats(enemy, ratio) {
   return {
     ...enemy,
@@ -238,12 +305,16 @@ function calculateDamage(attacker, defender) {
   return Math.max(1, Math.round(base * typeMultiplier(attacker, defender) * variance));
 }
 
-function startBlindBattle() {
-  plannedBattle = null;
-  startBattle({ kind: "blind" });
+function riskSelected() {
+  return Boolean(ui.riskToggle?.checked && save.vat.length >= 6);
 }
 
-function beginPlannedBattle() {
+function startBlindBattle(ranked = false) {
+  plannedBattle = null;
+  startBattle({ kind: "blind", ranked, risk: riskSelected() });
+}
+
+function beginPlannedBattle(ranked = false) {
   const currentTeam = teamPlasmoids();
   if (!currentTeam.length) {
     notify("Add Plasmoids to your team first.");
@@ -251,8 +322,11 @@ function beginPlannedBattle() {
     return;
   }
   plannedBattle = {
+    kind: "planned",
     enemy: randomEnemyTeam(currentTeam),
     selection: save.team.slice(0, 3),
+    ranked,
+    risk: riskSelected(),
   };
   while (plannedBattle.selection.length < 3) {
     const next = save.vat.find((p) => !plannedBattle.selection.includes(p.id));
@@ -262,7 +336,7 @@ function beginPlannedBattle() {
   battle = null;
   ui.battleLog.innerHTML = "";
   playSfx("battleStart");
-  notify("Enemy team scouted. Build your planned squad.");
+  notify(`${battleLabel(plannedBattle)} scouted. Build your squad.`);
   setMode("battle");
 }
 
@@ -278,23 +352,36 @@ function startPlannedBattle() {
   }
   startBattle({
     kind: "planned",
+    ranked: plannedBattle.ranked,
+    risk: plannedBattle.risk,
     teamIds: plannedBattle.selection,
     enemyTeam: plannedBattle.enemy,
   });
   plannedBattle = null;
 }
 
-function startBattle({ kind = "blind", teamIds = save.team, enemyTeam = null } = {}) {
+function startBattle({ kind = "blind", ranked = false, risk = false, teamIds = save.team, enemyTeam = null } = {}) {
   const team = teamIds.map((id) => save.vat.find((p) => p.id === id)).filter(Boolean);
   if (team.length !== 3) {
     notify("Pick a team of three Plasmoids first.");
     setMode("manage");
     return;
   }
+  if (risk && save.vat.length < 6) {
+    notify("Risk Battles require at least six Plasmoids in your vat.");
+    playSfx("blocked");
+    return;
+  }
+  const enemy = enemyTeam ? battleReadyEnemyTeam(enemyTeam) : randomEnemyTeam(team);
   battle = {
     kind,
+    ranked,
+    risk,
+    playerIds: teamIds.slice(0, 3),
+    playerBasePower: teamPower(team),
+    enemyBasePower: teamPower(enemy),
     player: team.map(cloneForBattle),
-    enemy: enemyTeam ? battleReadyEnemyTeam(enemyTeam) : randomEnemyTeam(team),
+    enemy,
     activePlayer: 0,
     activeEnemy: 0,
     turn: "player",
@@ -308,13 +395,17 @@ function startBattle({ kind = "blind", teamIds = save.team, enemyTeam = null } =
       damageTaken: 0,
       switches: 0,
       forfeited: false,
+      rankDelta: 0,
+      riskCaptured: 0,
+      riskLost: 0,
     },
     finished: false,
     result: null,
+    rewardsApplied: false,
+    riskCaptured: [],
+    riskLostIds: [],
   };
-  pushLog(kind === "planned"
-    ? "Your planned team enters against the scouted rival squad."
-    : "A rival battler flashes three unknown Plasmoids into the arena.");
+  pushLog(`${battleLabel()} begins. Enemy power ${Math.round(battle.enemyBasePower)}.`);
   ui.battleSetup.classList.add("hidden");
   ui.battleActions.classList.remove("hidden");
   playSfx("battleStart");
@@ -387,6 +478,7 @@ function defeatPlasmoid(side) {
   if (side === "enemy") {
     battle.stats.defeated += 1;
     battle.stats.goldEarned += 1;
+    if (battle.risk) battle.riskCaptured.push(sanitizeCapturedPlasmoid(target));
     save.gold += 1;
     save.profile.plasmoidsDefeated += 1;
     save.profile.goldEarned += 1;
@@ -398,6 +490,7 @@ function defeatPlasmoid(side) {
       pushLog(`Rival sends out ${active("enemy").name}.`);
     }
   } else {
+    if (battle.risk) battle.riskLostIds.push(target.id);
     const next = firstLiving(battle.player);
     if (next >= 0) {
       battle.activePlayer = next;
@@ -405,6 +498,30 @@ function defeatPlasmoid(side) {
     }
   }
   checkBattleEnd();
+}
+
+function applyBattleConsequences() {
+  if (!battle || battle.rewardsApplied) return;
+  battle.rewardsApplied = true;
+  if (battle.ranked) {
+    const delta = rankDeltaForPower(battle.enemyBasePower);
+    const signed = battle.result === "win" ? delta : -delta;
+    save.rankLevel = Math.max(0, save.rankLevel + signed);
+    battle.stats.rankDelta = signed;
+    save.profile.rankedBattles += 1;
+    save.profile[battle.result === "win" ? "rankedWins" : "rankedLosses"] += 1;
+  }
+  if (battle.risk) {
+    const lostIds = [...new Set(battle.riskLostIds)];
+    save.vat = save.vat.filter((p) => !lostIds.includes(p.id));
+    battle.riskCaptured.forEach((p) => save.vat.push(p));
+    battle.stats.riskCaptured = battle.riskCaptured.length;
+    battle.stats.riskLost = lostIds.length;
+    save.profile.riskBattles += 1;
+    save.profile.riskCaptures += battle.riskCaptured.length;
+    save.profile.riskLosses += lostIds.length;
+    normalizeTeamAfterVatChange();
+  }
 }
 
 function checkBattleEnd() {
@@ -415,6 +532,7 @@ function checkBattleEnd() {
   battle.result = playerLeft ? "win" : "loss";
   const elapsed = Math.max(1, Math.round(performance.now() - battle.startedAt));
   battle.stats.elapsedMs = elapsed;
+  applyBattleConsequences();
   save.profile.battles += 1;
   save.profile[battle.kind === "planned" ? "plannedBattles" : "blindBattles"] += 1;
   save.profile[battle.result === "win" ? "wins" : "losses"] += 1;
@@ -465,6 +583,7 @@ function forfeitBattle() {
   battle.player.forEach((p) => {
     p.hp = 0;
     p.defeated = true;
+    if (battle.risk) battle.riskLostIds.push(p.id);
   });
   playSfx("forfeit");
   pushLog("You forfeit the battle and recall your team.");
@@ -484,6 +603,9 @@ function showBattleSummary() {
     ["Attacks", stats.attacks],
     ["Damage Dealt", stats.damageDealt],
     ["Damage Taken", stats.damageTaken],
+    ["Rank Change", stats.rankDelta > 0 ? `+${stats.rankDelta}` : stats.rankDelta],
+    ["Risk Captures", stats.riskCaptured],
+    ["Risk Losses", stats.riskLost],
     ["Forfeited", stats.forfeited ? "Yes" : "No"],
     ["Battle Time", formatTime(stats.elapsedMs)],
   ].map(([label, value]) => `<div><strong>${value}</strong>${label}</div>`).join("");
@@ -559,8 +681,10 @@ function titleForMode(value) {
 
 function renderAll() {
   ui.gold.textContent = save.gold;
+  ui.rank.textContent = save.rankLevel;
   ui.summon.disabled = save.gold < 3;
   renderHome();
+  renderRiskOptions();
   renderBattleControls();
   renderPlannedSetup();
   renderManagement();
@@ -573,9 +697,29 @@ function renderHome() {
   const team = teamPlasmoids();
   ui.homeSummary.innerHTML = [
     `<div><strong>Team:</strong> ${team.map((p) => p.name).join(", ")}</div>`,
+    `<div><strong>Team Power:</strong> ${Math.round(teamPower(team))}</div>`,
+    `<div><strong>Rank Level:</strong> ${save.rankLevel}</div>`,
     `<div><strong>Vat:</strong> ${save.vat.length} Plasmoids collected</div>`,
     `<div><strong>Record:</strong> ${save.profile.wins}W / ${save.profile.losses}L</div>`,
   ].join("");
+}
+
+function renderRiskOptions() {
+  if (!ui.riskToggle) return;
+  if (plannedBattle && !battle) {
+    ui.riskToggle.disabled = true;
+    ui.riskToggle.checked = plannedBattle.risk;
+    ui.riskStatus.textContent = plannedBattle.risk
+      ? "Risk rules locked for this scouted battle."
+      : "Standard rules locked for this scouted battle.";
+    return;
+  }
+  const allowed = save.vat.length >= 6 && !battle;
+  ui.riskToggle.disabled = !allowed;
+  if (!allowed) ui.riskToggle.checked = false;
+  ui.riskStatus.textContent = allowed
+    ? "Capture defeated rivals, lose defeated teammates."
+    : `Requires 6+ Plasmoids (${save.vat.length}/6).`;
 }
 
 function renderBattleControls() {
@@ -583,12 +727,18 @@ function renderBattleControls() {
     ui.battleSetup.classList.remove("hidden");
     ui.battleActions.classList.add("hidden");
     ui.battleLog.classList.add("hidden");
+    ui.battlePowerSummary.classList.toggle("hidden", !plannedBattle);
+    ui.battlePowerSummary.innerHTML = plannedBattle
+      ? `<strong>${battleLabel(plannedBattle)}</strong><span>Enemy Power ${Math.round(teamPower(plannedBattle.enemy))}</span>`
+      : "";
     ui.switchButtons.innerHTML = "";
     return;
   }
   ui.battleSetup.classList.add("hidden");
   ui.battleActions.classList.remove("hidden");
   ui.battleLog.classList.remove("hidden");
+  ui.battlePowerSummary.classList.remove("hidden");
+  ui.battlePowerSummary.innerHTML = `<strong>${battleLabel()}</strong><span>Your Power ${Math.round(battle.playerBasePower)}</span><span>Enemy Power ${Math.round(battle.enemyBasePower)}</span>`;
   ui.switchButtons.innerHTML = battle.player.map((p, index) => {
     const disabled = p.defeated || index === battle.activePlayer ? "disabled" : "";
     return `<button class="mini-btn" type="button" data-switch="${index}" ${disabled}>Switch: ${escapeHtml(p.name)}</button>`;
@@ -615,6 +765,11 @@ function renderPlannedSetup() {
   const selected = plannedBattle.selection
     .map((id) => save.vat.find((p) => p.id === id))
     .filter(Boolean);
+  ui.plannedPowerSummary.innerHTML = [
+    `<strong>${battleLabel(plannedBattle)}</strong>`,
+    `<span>Enemy Power ${Math.round(teamPower(plannedBattle.enemy))}</span>`,
+    `<span>Your Planned Power ${Math.round(teamPower(selected))}</span>`,
+  ].join("");
   ui.plannedTeamSlots.innerHTML = [0, 1, 2].map((index) => {
     const p = selected[index];
     return `<div class="slot-card">${p ? `${escapeHtml(p.name)}<br>${p.type}` : "Open Slot"}</div>`;
@@ -629,6 +784,7 @@ function renderPlannedSetup() {
     });
   }).join("");
   ui.startPlannedBattle.disabled = selected.length !== 3;
+  ui.startPlannedBattle.textContent = `Start ${battleLabel(plannedBattle)}`;
   [...ui.plannedVatList.querySelectorAll("[data-plan-team]")].forEach((button) => {
     button.addEventListener("click", () => togglePlannedTeam(button.dataset.planTeam));
   });
@@ -660,6 +816,7 @@ function togglePlannedTeam(id) {
 
 function renderManagement() {
   const team = teamPlasmoids();
+  ui.teamPowerSummary.innerHTML = `<strong>Team Power ${Math.round(teamPower(team))}</strong><span>HP, attack, defense, and speed all contribute.</span>`;
   ui.teamSlots.innerHTML = [0, 1, 2].map((index) => {
     const p = team[index];
     return `<div class="slot-card">${p ? `${escapeHtml(p.name)}<br>${p.type}` : "Empty Slot"}</div>`;
@@ -686,9 +843,16 @@ function renderProfile() {
   const p = save.profile;
   const winRate = p.battles ? `${Math.round((p.wins / p.battles) * 100)}%` : "0%";
   const rows = [
+    ["Rank Level", save.rankLevel],
     ["Battles", p.battles],
     ["Blind Battles", p.blindBattles],
     ["Planned Battles", p.plannedBattles],
+    ["Ranked Battles", p.rankedBattles],
+    ["Ranked Wins", p.rankedWins],
+    ["Ranked Losses", p.rankedLosses],
+    ["Risk Battles", p.riskBattles],
+    ["Risk Captures", p.riskCaptures],
+    ["Risk Losses", p.riskLosses],
     ["Wins", p.wins],
     ["Win Rate", winRate],
     ["Plasmoids Defeated", p.plasmoidsDefeated],
@@ -706,7 +870,7 @@ function renderProfile() {
 
 function renderHowTo() {
   if (!ui.typeChart) return;
-  ui.typeChart.innerHTML = TYPE_NAMES.map((type) => {
+  const chartHtml = TYPE_NAMES.map((type) => {
     const strong = TYPES[type].strong;
     return `
       <div class="type-row">
@@ -715,6 +879,8 @@ function renderHowTo() {
         <span>deals double damage to ${strong} and takes half damage back from ${strong}.</span>
       </div>`;
   }).join("");
+  ui.typeChart.innerHTML = chartHtml;
+  if (ui.modalTypeChart) ui.modalTypeChart.innerHTML = chartHtml;
 }
 
 function plasmoidCardHtml(p, options = {}) {
@@ -837,7 +1003,7 @@ function renderHowToScene() {
 function renderBattleScene() {
   drawArena();
   if (!battle) {
-    const title = plannedBattle ? "Planned Battle" : "Battle Mode";
+    const title = plannedBattle ? battleLabel(plannedBattle) : "Battle Mode";
     const subtitle = plannedBattle ? "Scout complete - choose your team" : "Choose Blind Battle or Planned Battle";
     drawTitle(title, subtitle);
     if (plannedBattle) {
@@ -865,8 +1031,7 @@ function renderBattleScene() {
     drawPlasmoid(enemy, 888 - offset, 320, 112, true);
     drawHealthBar(735, 160, 300, enemy.hp, enemy.maxHp, enemy.name);
   }
-  const battleTitle = battle.kind === "planned" ? "Planned Battle" : "Blind Battle";
-  drawTitle(battle.finished ? (battle.result === "win" ? "Victory!" : "Defeat") : battleTitle, battle.finished ? "Review your battle results" : "Attack or switch your active Plasmoid");
+  drawTitle(battle.finished ? (battle.result === "win" ? "Victory!" : "Defeat") : battleLabel(), battle.finished ? "Review your battle results" : "Attack or switch your active Plasmoid");
   drawBattleHoverTooltip();
 }
 
@@ -893,10 +1058,17 @@ function drawArena() {
 function drawTitle(title, subtitle) {
   ctx.save();
   ctx.textAlign = "center";
-  ctx.fillStyle = "rgba(23,21,44,0.5)";
-  roundRect(360, 34, 560, 112, 8, true);
-  ctx.fillStyle = "#fff";
   ctx.font = "900 54px Inter, sans-serif";
+  let titleSize = 54;
+  const maxTitleWidth = 780;
+  const measured = ctx.measureText(title).width;
+  if (measured > maxTitleWidth) titleSize = Math.max(36, Math.floor((maxTitleWidth / measured) * 54));
+  ctx.font = `900 ${titleSize}px Inter, sans-serif`;
+  const cardWidth = Math.min(900, Math.max(560, ctx.measureText(title).width + 90));
+  const cardX = (W - cardWidth) / 2;
+  ctx.fillStyle = "rgba(23,21,44,0.5)";
+  roundRect(cardX, 34, cardWidth, 112, 8, true);
+  ctx.fillStyle = "#fff";
   ctx.fillText(title, 640, 86);
   ctx.font = "800 22px Inter, sans-serif";
   ctx.fillText(subtitle, 640, 122);
@@ -969,6 +1141,15 @@ function drawPlasmoid(p, x, y, radius, featured) {
   ctx.translate(x, y);
   const wobble = 1 + Math.sin(t * 3 + p.seed) * 0.04;
   ctx.scale(wobble, 1 / wobble);
+  const sprite = sprites[p.type];
+  if (sprite?.complete && sprite.naturalWidth > 0) {
+    const size = radius * (featured ? 3.15 : 2.75);
+    ctx.shadowBlur = featured ? 30 : 16;
+    ctx.shadowColor = type.color;
+    ctx.drawImage(sprite, -size / 2, -size / 2, size, size);
+    ctx.restore();
+    return;
+  }
   const glow = ctx.createRadialGradient(-radius * 0.25, -radius * 0.28, radius * 0.05, 0, 0, radius);
   glow.addColorStop(0, "#fff");
   glow.addColorStop(0.22, type.color);
@@ -1272,12 +1453,14 @@ function installEvents() {
     if (button.classList.contains("mode-tab")) return;
     button.addEventListener("click", () => {
       setMode(button.dataset.mode);
-      if (button.dataset.battleShortcut === "blind") startBlindBattle();
-      if (button.dataset.battleShortcut === "planned") beginPlannedBattle();
+      if (button.dataset.battleShortcut === "blind") startBlindBattle(false);
+      if (button.dataset.battleShortcut === "planned") beginPlannedBattle(false);
     });
   });
-  ui.blindBattle.addEventListener("click", startBlindBattle);
-  ui.plannedBattle.addEventListener("click", beginPlannedBattle);
+  ui.blindBattle.addEventListener("click", () => startBlindBattle(false));
+  ui.blindRanked.addEventListener("click", () => startBlindBattle(true));
+  ui.plannedBattle.addEventListener("click", () => beginPlannedBattle(false));
+  ui.plannedRanked.addEventListener("click", () => beginPlannedBattle(true));
   ui.startPlannedBattle.addEventListener("click", startPlannedBattle);
   ui.attack.addEventListener("click", playerAttack);
   ui.forfeit.addEventListener("click", forfeitBattle);
@@ -1296,6 +1479,19 @@ function installEvents() {
     if (soundEnabled) playMusic(mode);
   });
   ui.fullscreen.addEventListener("click", toggleFullscreen);
+  ui.setupChart.addEventListener("click", openTypeChart);
+  ui.battleChart.addEventListener("click", openTypeChart);
+  ui.closeTypeChart.addEventListener("click", closeTypeChart);
+}
+
+function openTypeChart() {
+  ui.typeChartModal.classList.remove("hidden");
+  playSfx("nav");
+}
+
+function closeTypeChart() {
+  ui.typeChartModal.classList.add("hidden");
+  playSfx("nav");
 }
 
 function toggleFullscreen() {
@@ -1312,6 +1508,11 @@ function preload() {
     img.src = src;
     images[key] = img;
   });
+  Object.entries(SPRITES).forEach(([key, src]) => {
+    const img = new Image();
+    img.src = src;
+    sprites[key] = img;
+  });
 }
 
 function gameText() {
@@ -1319,10 +1520,13 @@ function gameText() {
     coordinateSystem: "Canvas 1280x720, origin top-left, x right, y down.",
     mode,
     gold: save.gold,
+    rankLevel: save.rankLevel,
     vatCount: save.vat.length,
     team: teamPlasmoids().map((p) => ({ name: p.name, type: p.type, hp: p.maxHp, attack: p.attack, defense: p.defense, speed: p.speed })),
     teamPower: Math.round(teamPower(teamPlasmoids())),
     plannedBattle: plannedBattle ? {
+      ranked: plannedBattle.ranked,
+      risk: plannedBattle.risk,
       enemy: plannedBattle.enemy.map((p) => ({ name: p.name, type: p.type, hp: p.maxHp, attack: p.attack, defense: p.defense, speed: p.speed })),
       enemyPower: Math.round(teamPower(plannedBattle.enemy)),
       selection: plannedBattle.selection
@@ -1332,6 +1536,9 @@ function gameText() {
     } : null,
     battle: battle ? {
       kind: battle.kind,
+      ranked: battle.ranked,
+      risk: battle.risk,
+      label: battleLabel(),
       activePlayer: active("player") ? { name: active("player").name, type: active("player").type, hp: active("player").hp, maxHp: active("player").maxHp } : null,
       activeEnemy: active("enemy") ? { name: active("enemy").name, type: active("enemy").type, hp: active("enemy").hp, maxHp: active("enemy").maxHp } : null,
       playerPower: Math.round(teamPower(battle.player)),
