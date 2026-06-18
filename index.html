@@ -35,14 +35,17 @@
           <button class="mode-tab" type="button" data-mode="battle">Battle</button>
           <button class="mode-tab" type="button" data-mode="gacha">Gacha</button>
           <button class="mode-tab" type="button" data-mode="manage">Manage</button>
+          <button class="mode-tab" type="button" data-mode="howto">How To</button>
           <button class="mode-tab" type="button" data-mode="profile">Profile</button>
         </nav>
 
         <div id="panel-home" class="panel active">
           <div class="action-grid">
-            <button class="primary-action" type="button" data-mode="battle">Start Battle</button>
+            <button class="primary-action" type="button" data-mode="battle" data-battle-shortcut="blind">Blind Battle</button>
+            <button class="primary-action" type="button" data-mode="battle" data-battle-shortcut="planned">Planned Battle</button>
             <button class="primary-action" type="button" data-mode="gacha">Use UAP Dogwhistle</button>
             <button class="primary-action" type="button" data-mode="manage">Manage Team</button>
+            <button class="primary-action" type="button" data-mode="howto">How To Play</button>
             <button class="primary-action" type="button" data-mode="profile">Player Profile</button>
           </div>
           <div class="compact-stats" id="home-summary"></div>
@@ -50,11 +53,26 @@
 
         <div id="panel-battle" class="panel">
           <div id="battle-setup" class="battle-controls">
-            <button id="new-battle-btn" class="primary-action" type="button">Find Rival Team</button>
+            <p class="mode-copy">Blind Battles start immediately. Planned Battles reveal the rival team first so you can counter-pick your trio.</p>
+            <div class="battle-choice-row">
+              <button id="blind-battle-btn" class="primary-action" type="button">Start Blind Battle</button>
+              <button id="planned-battle-btn" class="primary-action" type="button">Scout Planned Battle</button>
+            </div>
+            <div id="planned-setup" class="planned-setup hidden">
+              <h2>Planned Battle Prep</h2>
+              <p class="mode-copy">Review the rival team, then choose three Plasmoids from your vat for this battle.</p>
+              <h3>Rival Team</h3>
+              <div id="planned-enemy-list" class="mini-roster"></div>
+              <h3>Your Planned Team</h3>
+              <div id="planned-team-slots" class="team-slots"></div>
+              <div id="planned-vat-list" class="vat-list"></div>
+              <button id="start-planned-battle-btn" class="primary-action danger" type="button">Start Planned Battle</button>
+            </div>
           </div>
           <div id="battle-actions" class="battle-controls hidden">
             <button id="attack-btn" class="primary-action danger" type="button">Attack</button>
             <div id="switch-buttons" class="switch-row"></div>
+            <button id="forfeit-btn" class="mini-btn forfeit-btn" type="button">Forfeit Battle</button>
           </div>
           <div id="battle-log" class="battle-log" aria-live="polite"></div>
         </div>
@@ -71,6 +89,36 @@
           <p class="mode-copy">Choose exactly three Plasmoids for your active battle team.</p>
           <div id="team-slots" class="team-slots"></div>
           <div id="vat-list" class="vat-list"></div>
+        </div>
+
+        <div id="panel-howto" class="panel">
+          <div class="guide-stack">
+            <article class="guide-card">
+              <h2>Battle Types</h2>
+              <p><strong>Blind Battles</strong> hide the enemy team until the fight starts. Use your best all-around trio.</p>
+              <p><strong>Planned Battles</strong> reveal the rival team first. Pick three Plasmoids that punish their types and cover each other.</p>
+            </article>
+            <article class="guide-card">
+              <h2>Type Advantage</h2>
+              <div id="type-chart" class="type-chart"></div>
+              <p>Advantage attacks deal double damage. If the defender has advantage over your attacker, your attack is resisted and deals half damage.</p>
+            </article>
+            <article class="guide-card">
+              <h2>Speed Advantage</h2>
+              <p>Faster Plasmoids are more reliable attackers because they can land decisive hits before slower opponents get another turn.</p>
+              <p>In close matchups, speed can matter more than raw attack because a quick Plasmoid may finish a weakened rival first.</p>
+            </article>
+            <article class="guide-card">
+              <h2>When To Switch</h2>
+              <p>Switch when your active Plasmoid is facing a type disadvantage, is low on health, or cannot damage the opponent efficiently.</p>
+              <p>Switching usually lets the rival strike during the swap, so switch early rather than waiting until your Plasmoid is almost defeated.</p>
+            </article>
+            <article class="guide-card">
+              <h2>Team Building</h2>
+              <p>Bring three different types when possible. A balanced team should include at least one fast Plasmoid, one high-attack Plasmoid, and one sturdy Plasmoid.</p>
+              <p>Use Gacha Mode to expand your vat, then use Management Mode for your default Blind Battle team.</p>
+            </article>
+          </div>
         </div>
 
         <div id="panel-profile" class="panel">

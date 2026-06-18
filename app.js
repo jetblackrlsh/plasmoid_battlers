@@ -18,6 +18,7 @@ const MUSIC = {
   gacha: "Music/Summoning%20the%20Plasmoids.mp3",
   manage: "Music/Plasmoid%20Management%20Mode.mp3",
   profile: "Music/Battler%20Profile%20Hub.mp3",
+  howto: "Music/Plasmoid%20Battlers%20Home.mp3",
   victory: "Music/Plasmoid%20Victory!.mp3",
   defeat: "Music/Plasmoid%20Defeat.mp3",
 };
@@ -40,16 +41,24 @@ const ui = {
   soundToggle: document.getElementById("sound-toggle"),
   fullscreen: document.getElementById("fullscreen-btn"),
   homeSummary: document.getElementById("home-summary"),
-  newBattle: document.getElementById("new-battle-btn"),
+  blindBattle: document.getElementById("blind-battle-btn"),
+  plannedBattle: document.getElementById("planned-battle-btn"),
+  plannedSetup: document.getElementById("planned-setup"),
+  plannedEnemyList: document.getElementById("planned-enemy-list"),
+  plannedTeamSlots: document.getElementById("planned-team-slots"),
+  plannedVatList: document.getElementById("planned-vat-list"),
+  startPlannedBattle: document.getElementById("start-planned-battle-btn"),
   battleSetup: document.getElementById("battle-setup"),
   battleActions: document.getElementById("battle-actions"),
   attack: document.getElementById("attack-btn"),
+  forfeit: document.getElementById("forfeit-btn"),
   switchButtons: document.getElementById("switch-buttons"),
   battleLog: document.getElementById("battle-log"),
   summon: document.getElementById("summon-btn"),
   summonResult: document.getElementById("summon-result"),
   teamSlots: document.getElementById("team-slots"),
   vatList: document.getElementById("vat-list"),
+  typeChart: document.getElementById("type-chart"),
   profileGrid: document.getElementById("profile-grid"),
   newGame: document.getElementById("new-game-btn"),
   modal: document.getElementById("battle-summary-modal"),
@@ -69,9 +78,30 @@ let audioUnlocked = false;
 let soundEnabled = true;
 let audioCtx = null;
 let battle = null;
+let plannedBattle = null;
 let lastFrame = performance.now();
 let selectedVatId = null;
+let pointer = { x: -9999, y: -9999 };
 const fx = [];
+
+function defaultProfile() {
+  return {
+    battles: 0,
+    blindBattles: 0,
+    plannedBattles: 0,
+    wins: 0,
+    losses: 0,
+    plasmoidsDefeated: 0,
+    goldEarned: 0,
+    attacks: 0,
+    damageDealt: 0,
+    damageTaken: 0,
+    summons: 0,
+    switches: 0,
+    teamAdds: 0,
+    longestBattleMs: 0,
+  };
+}
 
 function makeStarterSave() {
   const starters = [
@@ -83,20 +113,7 @@ function makeStarterSave() {
     gold: 3,
     vat: starters,
     team: starters.map((p) => p.id),
-    profile: {
-      battles: 0,
-      wins: 0,
-      losses: 0,
-      plasmoidsDefeated: 0,
-      goldEarned: 0,
-      attacks: 0,
-      damageDealt: 0,
-      damageTaken: 0,
-      summons: 0,
-      switches: 0,
-      teamAdds: 0,
-      longestBattleMs: 0,
-    },
+    profile: defaultProfile(),
   };
 }
 
@@ -106,6 +123,11 @@ function loadSave() {
     if (!raw) return makeStarterSave();
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed.vat) || parsed.vat.length < 3) return makeStarterSave();
+    parsed.profile = { ...defaultProfile(), ...(parsed.profile || {}) };
+    parsed.team = Array.isArray(parsed.team)
+      ? parsed.team.filter((id) => parsed.vat.some((p) => p.id === id)).slice(0, 3)
+      : parsed.vat.slice(0, 3).map((p) => p.id);
+    if (!parsed.team.length) parsed.team = parsed.vat.slice(0, 3).map((p) => p.id);
     return parsed;
   } catch {
     return makeStarterSave();
@@ -163,8 +185,45 @@ function cloneForBattle(plasmoid) {
   return { ...plasmoid, hp: plasmoid.maxHp, defeated: false };
 }
 
-function randomEnemyTeam() {
-  return [createPlasmoid(), createPlasmoid(), createPlasmoid()].map(cloneForBattle);
+function plasmoidPower(p) {
+  return p.maxHp + p.attack * 3.2 + p.defense * 2.2 + p.speed * 2;
+}
+
+function teamPower(team) {
+  return team.reduce((total, p) => total + plasmoidPower(p), 0);
+}
+
+function tuneEnemyStats(enemy, ratio) {
+  return {
+    ...enemy,
+    maxHp: Math.max(70, Math.round(enemy.maxHp * ratio)),
+    attack: Math.max(14, Math.round(enemy.attack * ratio)),
+    defense: Math.max(6, Math.round(enemy.defense * ratio)),
+    speed: Math.max(10, Math.round(enemy.speed * ratio)),
+  };
+}
+
+function randomEnemyTeam(playerTeam = teamPlasmoids()) {
+  const target = Math.max(1, teamPower(playerTeam));
+  let best = null;
+  let bestGap = Infinity;
+  for (let i = 0; i < 36; i++) {
+    const candidate = [createPlasmoid(), createPlasmoid(), createPlasmoid()];
+    const power = teamPower(candidate);
+    const gap = Math.abs(power - target);
+    if (gap < bestGap) {
+      best = candidate;
+      bestGap = gap;
+    }
+  }
+  const current = teamPower(best);
+  const desired = target * (0.94 + Math.random() * 0.12);
+  const ratio = Math.max(0.82, Math.min(1.12, desired / Math.max(1, current)));
+  return best.map((p) => cloneForBattle(tuneEnemyStats(p, ratio)));
+}
+
+function battleReadyEnemyTeam(enemyTeam) {
+  return enemyTeam.map((p) => cloneForBattle(p));
 }
 
 function typeMultiplier(attacker, defender) {
@@ -179,16 +238,63 @@ function calculateDamage(attacker, defender) {
   return Math.max(1, Math.round(base * typeMultiplier(attacker, defender) * variance));
 }
 
-function startBattle() {
-  const team = teamPlasmoids();
+function startBlindBattle() {
+  plannedBattle = null;
+  startBattle({ kind: "blind" });
+}
+
+function beginPlannedBattle() {
+  const currentTeam = teamPlasmoids();
+  if (!currentTeam.length) {
+    notify("Add Plasmoids to your team first.");
+    setMode("manage");
+    return;
+  }
+  plannedBattle = {
+    enemy: randomEnemyTeam(currentTeam),
+    selection: save.team.slice(0, 3),
+  };
+  while (plannedBattle.selection.length < 3) {
+    const next = save.vat.find((p) => !plannedBattle.selection.includes(p.id));
+    if (!next) break;
+    plannedBattle.selection.push(next.id);
+  }
+  battle = null;
+  ui.battleLog.innerHTML = "";
+  playSfx("battleStart");
+  notify("Enemy team scouted. Build your planned squad.");
+  setMode("battle");
+}
+
+function startPlannedBattle() {
+  if (!plannedBattle) {
+    beginPlannedBattle();
+    return;
+  }
+  if (plannedBattle.selection.length !== 3) {
+    notify("Choose exactly three Plasmoids for this planned battle.");
+    playSfx("blocked");
+    return;
+  }
+  startBattle({
+    kind: "planned",
+    teamIds: plannedBattle.selection,
+    enemyTeam: plannedBattle.enemy,
+  });
+  plannedBattle = null;
+}
+
+function startBattle({ kind = "blind", teamIds = save.team, enemyTeam = null } = {}) {
+  const team = teamIds.map((id) => save.vat.find((p) => p.id === id)).filter(Boolean);
   if (team.length !== 3) {
     notify("Pick a team of three Plasmoids first.");
     setMode("manage");
     return;
   }
   battle = {
+    kind,
     player: team.map(cloneForBattle),
-    enemy: randomEnemyTeam(),
+    enemy: enemyTeam ? battleReadyEnemyTeam(enemyTeam) : randomEnemyTeam(team),
     activePlayer: 0,
     activeEnemy: 0,
     turn: "player",
@@ -201,11 +307,14 @@ function startBattle() {
       damageDealt: 0,
       damageTaken: 0,
       switches: 0,
+      forfeited: false,
     },
     finished: false,
     result: null,
   };
-  pushLog("A rival battler flashes three Plasmoids into the arena.");
+  pushLog(kind === "planned"
+    ? "Your planned team enters against the scouted rival squad."
+    : "A rival battler flashes three unknown Plasmoids into the arena.");
   ui.battleSetup.classList.add("hidden");
   ui.battleActions.classList.remove("hidden");
   playSfx("battleStart");
@@ -307,12 +416,12 @@ function checkBattleEnd() {
   const elapsed = Math.max(1, Math.round(performance.now() - battle.startedAt));
   battle.stats.elapsedMs = elapsed;
   save.profile.battles += 1;
+  save.profile[battle.kind === "planned" ? "plannedBattles" : "blindBattles"] += 1;
   save.profile[battle.result === "win" ? "wins" : "losses"] += 1;
   save.profile.longestBattleMs = Math.max(save.profile.longestBattleMs, elapsed);
   persist();
   ui.battleActions.classList.add("hidden");
   ui.battleSetup.classList.remove("hidden");
-  ui.newBattle.textContent = "Find Rival Team";
   playMusic(battle.result === "win" ? "victory" : "defeat");
   setTimeout(() => showBattleSummary(), 450);
 }
@@ -350,6 +459,20 @@ function playerSwitch(index) {
   renderAll();
 }
 
+function forfeitBattle() {
+  if (!battle || battle.finished) return;
+  battle.stats.forfeited = true;
+  battle.player.forEach((p) => {
+    p.hp = 0;
+    p.defeated = true;
+  });
+  playSfx("forfeit");
+  pushLog("You forfeit the battle and recall your team.");
+  checkBattleEnd();
+  renderBattleControls();
+  renderAll();
+}
+
 function showBattleSummary() {
   if (!battle) return;
   ui.summaryTitle.textContent = battle.result === "win" ? "Victory!" : "Defeat";
@@ -361,6 +484,7 @@ function showBattleSummary() {
     ["Attacks", stats.attacks],
     ["Damage Dealt", stats.damageDealt],
     ["Damage Taken", stats.damageTaken],
+    ["Forfeited", stats.forfeited ? "Yes" : "No"],
     ["Battle Time", formatTime(stats.elapsedMs)],
   ].map(([label, value]) => `<div><strong>${value}</strong>${label}</div>`).join("");
   ui.modal.classList.remove("hidden");
@@ -419,7 +543,6 @@ function setMode(next) {
   ui.panels.forEach((panel) => panel.classList.toggle("active", panel.id === `panel-${next}`));
   playSfx("nav");
   playMusic(next);
-  if (next === "battle" && !battle) ui.newBattle.textContent = "Find Rival Team";
   renderAll();
 }
 
@@ -430,6 +553,7 @@ function titleForMode(value) {
     gacha: "Gacha Mode",
     manage: "Management Mode",
     profile: "Player Profile",
+    howto: "How To Play",
   }[value];
 }
 
@@ -438,8 +562,10 @@ function renderAll() {
   ui.summon.disabled = save.gold < 3;
   renderHome();
   renderBattleControls();
+  renderPlannedSetup();
   renderManagement();
   renderProfile();
+  renderHowTo();
   render();
 }
 
@@ -456,11 +582,13 @@ function renderBattleControls() {
   if (!battle || battle.finished) {
     ui.battleSetup.classList.remove("hidden");
     ui.battleActions.classList.add("hidden");
+    ui.battleLog.classList.add("hidden");
     ui.switchButtons.innerHTML = "";
     return;
   }
   ui.battleSetup.classList.add("hidden");
   ui.battleActions.classList.remove("hidden");
+  ui.battleLog.classList.remove("hidden");
   ui.switchButtons.innerHTML = battle.player.map((p, index) => {
     const disabled = p.defeated || index === battle.activePlayer ? "disabled" : "";
     return `<button class="mini-btn" type="button" data-switch="${index}" ${disabled}>Switch: ${escapeHtml(p.name)}</button>`;
@@ -468,6 +596,66 @@ function renderBattleControls() {
   [...ui.switchButtons.querySelectorAll("[data-switch]")].forEach((button) => {
     button.addEventListener("click", () => playerSwitch(Number(button.dataset.switch)));
   });
+}
+
+function renderPlannedSetup() {
+  if (!ui.plannedSetup) return;
+  const visible = mode === "battle" && !battle && plannedBattle;
+  ui.plannedSetup.classList.toggle("hidden", !visible);
+  if (!plannedBattle) {
+    ui.plannedEnemyList.innerHTML = "";
+    ui.plannedTeamSlots.innerHTML = "";
+    ui.plannedVatList.innerHTML = "";
+    return;
+  }
+  ui.plannedEnemyList.innerHTML = plannedBattle.enemy.map((p) => plasmoidCardHtml(p, {
+    showButton: false,
+    mark: `${TYPES[p.type].strong} target`,
+  })).join("");
+  const selected = plannedBattle.selection
+    .map((id) => save.vat.find((p) => p.id === id))
+    .filter(Boolean);
+  ui.plannedTeamSlots.innerHTML = [0, 1, 2].map((index) => {
+    const p = selected[index];
+    return `<div class="slot-card">${p ? `${escapeHtml(p.name)}<br>${p.type}` : "Open Slot"}</div>`;
+  }).join("");
+  ui.plannedVatList.innerHTML = save.vat.map((p) => {
+    const inPlan = plannedBattle.selection.includes(p.id);
+    return plasmoidCardHtml(p, {
+      selected: inPlan,
+      buttonLabel: inPlan ? "Remove" : "Add",
+      buttonAttr: `data-plan-team="${p.id}"`,
+      mark: inPlan ? "planned" : "",
+    });
+  }).join("");
+  ui.startPlannedBattle.disabled = selected.length !== 3;
+  [...ui.plannedVatList.querySelectorAll("[data-plan-team]")].forEach((button) => {
+    button.addEventListener("click", () => togglePlannedTeam(button.dataset.planTeam));
+  });
+}
+
+function togglePlannedTeam(id) {
+  if (!plannedBattle) return;
+  const exists = plannedBattle.selection.includes(id);
+  if (exists) {
+    if (plannedBattle.selection.length <= 1) {
+      notify("A planned battle team needs at least one Plasmoid.");
+      playSfx("blocked");
+      return;
+    }
+    plannedBattle.selection = plannedBattle.selection.filter((teamId) => teamId !== id);
+    playSfx("removeTeam");
+  } else {
+    if (plannedBattle.selection.length >= 3) {
+      notify("Planned teams can only have three Plasmoids.");
+      playSfx("blocked");
+      return;
+    }
+    plannedBattle.selection.push(id);
+    playSfx("addTeam");
+    fx.push({ type: "team", timer: 0, x: 640, y: 360 });
+  }
+  renderAll();
 }
 
 function renderManagement() {
@@ -499,6 +687,8 @@ function renderProfile() {
   const winRate = p.battles ? `${Math.round((p.wins / p.battles) * 100)}%` : "0%";
   const rows = [
     ["Battles", p.battles],
+    ["Blind Battles", p.blindBattles],
+    ["Planned Battles", p.plannedBattles],
     ["Wins", p.wins],
     ["Win Rate", winRate],
     ["Plasmoids Defeated", p.plasmoidsDefeated],
@@ -512,6 +702,36 @@ function renderProfile() {
     ["Longest Battle", formatTime(p.longestBattleMs)],
   ];
   ui.profileGrid.innerHTML = rows.map(([label, value]) => `<div class="profile-stat"><strong>${value}</strong>${label}</div>`).join("");
+}
+
+function renderHowTo() {
+  if (!ui.typeChart) return;
+  ui.typeChart.innerHTML = TYPE_NAMES.map((type) => {
+    const strong = TYPES[type].strong;
+    return `
+      <div class="type-row">
+        <span class="type-swatch" style="background:${TYPES[type].color}; box-shadow:0 0 14px ${TYPES[type].color}"></span>
+        <strong>${type}</strong>
+        <span>deals double damage to ${strong} and takes half damage back from ${strong}.</span>
+      </div>`;
+  }).join("");
+}
+
+function plasmoidCardHtml(p, options = {}) {
+  const selected = options.selected ? "outline: 3px solid #ff4fd8;" : "";
+  const marker = options.mark ? `<span class="card-marker">${escapeHtml(options.mark)}</span>` : "";
+  const button = options.showButton === false
+    ? ""
+    : `<button class="mini-btn" type="button" ${options.buttonAttr || ""}>${escapeHtml(options.buttonLabel || "Select")}</button>`;
+  return `
+    <article class="plasmoid-card" style="${selected}">
+      <div class="plasmoid-chip" style="color:${TYPES[p.type].color}; background:${plasmoidGradient(p)}"></div>
+      <div>
+        <div class="plasmoid-name">${escapeHtml(p.name)} ${marker}</div>
+        <div class="plasmoid-meta">${p.rank} ${p.type}<br>HP ${p.maxHp} - ATK ${p.attack} - DEF ${p.defense} - SPD ${p.speed}</div>
+      </div>
+      ${button}
+    </article>`;
 }
 
 function plasmoidSummaryHtml(p, title) {
@@ -549,6 +769,7 @@ function render() {
   else if (mode === "gacha") renderGachaScene();
   else if (mode === "manage") renderVatScene();
   else if (mode === "profile") renderProfileScene();
+  else if (mode === "howto") renderHowToScene();
   else renderHomeScene();
   drawFx();
 }
@@ -589,11 +810,45 @@ function renderProfileScene() {
   drawMedal(640, 390);
 }
 
+function renderHowToScene() {
+  drawBackground("home");
+  drawTitle("How To Play", "Build for type coverage, speed, and smart switches");
+  const cards = [
+    ["Scout", "See the rival trio"],
+    ["Speed", "Strike before rivals"],
+    ["Switch", "Counter bad matchups"],
+  ];
+  ctx.save();
+  ctx.textAlign = "center";
+  cards.forEach(([head, text], i) => {
+    const x = 210 + i * 330;
+    ctx.fillStyle = "rgba(255,255,255,0.84)";
+    roundRect(x, 438, 260, 86, 8, true);
+    ctx.fillStyle = ["#ff4fd8", "#00d9ff", "#98ff45"][i];
+    ctx.font = "900 30px Inter, sans-serif";
+    ctx.fillText(head, x + 130, 475);
+    ctx.fillStyle = "#17152c";
+    ctx.font = "800 19px Inter, sans-serif";
+    ctx.fillText(text, x + 130, 505);
+  });
+  ctx.restore();
+}
+
 function renderBattleScene() {
   drawArena();
   if (!battle) {
-    drawTitle("Battle Mode", "Find a rival team to begin");
-    teamPlasmoids().forEach((p, i) => drawPlasmoid(p, 430 + i * 210, 438, 64, true));
+    const title = plannedBattle ? "Planned Battle" : "Battle Mode";
+    const subtitle = plannedBattle ? "Scout complete - choose your team" : "Choose Blind Battle or Planned Battle";
+    drawTitle(title, subtitle);
+    if (plannedBattle) {
+      plannedBattle.enemy.forEach((p, i) => drawPlasmoid(p, 360 + i * 150, 300, 50, true));
+      plannedBattle.selection
+        .map((id) => save.vat.find((p) => p.id === id))
+        .filter(Boolean)
+        .forEach((p, i) => drawPlasmoid(p, 360 + i * 150, 505, 58, true));
+    } else {
+      teamPlasmoids().forEach((p, i) => drawPlasmoid(p, 430 + i * 210, 438, 64, true));
+    }
     return;
   }
   const player = active("player");
@@ -610,7 +865,9 @@ function renderBattleScene() {
     drawPlasmoid(enemy, 888 - offset, 320, 112, true);
     drawHealthBar(735, 160, 300, enemy.hp, enemy.maxHp, enemy.name);
   }
-  drawTitle(battle.finished ? (battle.result === "win" ? "Victory!" : "Defeat") : "Battle Mode", battle.finished ? "Review your battle results" : "Attack or switch your active Plasmoid");
+  const battleTitle = battle.kind === "planned" ? "Planned Battle" : "Blind Battle";
+  drawTitle(battle.finished ? (battle.result === "win" ? "Victory!" : "Defeat") : battleTitle, battle.finished ? "Review your battle results" : "Attack or switch your active Plasmoid");
+  drawBattleHoverTooltip();
 }
 
 function drawArena() {
@@ -644,6 +901,66 @@ function drawTitle(title, subtitle) {
   ctx.font = "800 22px Inter, sans-serif";
   ctx.fillText(subtitle, 640, 122);
   ctx.restore();
+}
+
+function pointerNear(x, y, radius) {
+  return Math.hypot(pointer.x - x, pointer.y - y) <= radius;
+}
+
+function activeHoverTarget() {
+  if (!battle || battle.finished || mode !== "battle") return null;
+  if (active("player") && pointerNear(395, 390, 120)) return { p: active("player"), side: "Your Active" };
+  if (active("enemy") && pointerNear(888, 320, 120)) return { p: active("enemy"), side: "Rival Active" };
+  return null;
+}
+
+function drawBattleHoverTooltip() {
+  const target = activeHoverTarget();
+  if (!target) return;
+  const { p, side } = target;
+  const lines = [
+    side,
+    `${p.name}`,
+    `Type: ${p.type}`,
+    `Speed: ${p.speed}`,
+    `Strong vs ${TYPES[p.type].strong}`,
+  ];
+  const width = 230;
+  const height = 128;
+  const x = Math.min(W - width - 18, Math.max(18, pointer.x + 22));
+  const y = Math.min(H - height - 18, Math.max(18, pointer.y - 34));
+  ctx.save();
+  ctx.fillStyle = "rgba(23,21,44,0.9)";
+  ctx.shadowBlur = 22;
+  ctx.shadowColor = TYPES[p.type].color;
+  roundRect(x, y, width, height, 8, true);
+  ctx.shadowBlur = 0;
+  ctx.textAlign = "left";
+  ctx.fillStyle = TYPES[p.type].color;
+  ctx.font = "900 18px Inter, sans-serif";
+  ctx.fillText(lines[0], x + 14, y + 27);
+  ctx.fillStyle = "#fff";
+  ctx.font = "900 20px Inter, sans-serif";
+  ctx.fillText(lines[1], x + 14, y + 54);
+  ctx.font = "800 16px Inter, sans-serif";
+  lines.slice(2).forEach((line, i) => ctx.fillText(line, x + 14, y + 80 + i * 19));
+  ctx.restore();
+}
+
+function wrapText(text, x, y, maxWidth, lineHeight) {
+  const words = text.split(" ");
+  let line = "";
+  words.forEach((word) => {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      ctx.fillText(line, x, y);
+      line = word;
+      y += lineHeight;
+    } else {
+      line = test;
+    }
+  });
+  if (line) ctx.fillText(line, x, y);
 }
 
 function drawPlasmoid(p, x, y, radius, featured) {
@@ -883,7 +1200,7 @@ function playMusic(track) {
   }
   currentMusic = new Audio(url);
   currentMusic.dataset.url = url;
-  currentMusic.loop = ["home", "battle", "gacha", "manage", "profile"].includes(track);
+  currentMusic.loop = ["home", "battle", "gacha", "manage", "profile", "howto"].includes(track);
   currentMusic.volume = 0.38;
   currentMusic.play().catch(() => {});
 }
@@ -898,6 +1215,7 @@ function playSfx(name) {
     enemySwitch: [48, 55, 60],
     summon: [67, 72, 79, 84, 91],
     gold: [84, 88, 91],
+    forfeit: [52, 47, 43],
     addTeam: [64, 69, 76],
     removeTeam: [76, 69, 64],
     blocked: [44, 43],
@@ -924,6 +1242,7 @@ function resetGame() {
   if (!confirm("Start a new game and erase local Plasmoid progress?")) return;
   save = makeStarterSave();
   battle = null;
+  plannedBattle = null;
   selectedVatId = null;
   localStorage.setItem(SAVE_KEY, JSON.stringify(save));
   playSfx("reset");
@@ -936,13 +1255,32 @@ function installEvents() {
   document.addEventListener("keydown", (event) => {
     if (event.key.toLowerCase() === "f") toggleFullscreen();
   });
+  canvas.addEventListener("mousemove", (event) => {
+    const rect = canvas.getBoundingClientRect();
+    pointer = {
+      x: ((event.clientX - rect.left) / rect.width) * W,
+      y: ((event.clientY - rect.top) / rect.height) * H,
+    };
+    render();
+  });
+  canvas.addEventListener("mouseleave", () => {
+    pointer = { x: -9999, y: -9999 };
+    render();
+  });
   ui.tabs.forEach((tab) => tab.addEventListener("click", () => setMode(tab.dataset.mode)));
   document.querySelectorAll("[data-mode]").forEach((button) => {
     if (button.classList.contains("mode-tab")) return;
-    button.addEventListener("click", () => setMode(button.dataset.mode));
+    button.addEventListener("click", () => {
+      setMode(button.dataset.mode);
+      if (button.dataset.battleShortcut === "blind") startBlindBattle();
+      if (button.dataset.battleShortcut === "planned") beginPlannedBattle();
+    });
   });
-  ui.newBattle.addEventListener("click", startBattle);
+  ui.blindBattle.addEventListener("click", startBlindBattle);
+  ui.plannedBattle.addEventListener("click", beginPlannedBattle);
+  ui.startPlannedBattle.addEventListener("click", startPlannedBattle);
   ui.attack.addEventListener("click", playerAttack);
+  ui.forfeit.addEventListener("click", forfeitBattle);
   ui.summon.addEventListener("click", summonPlasmoid);
   ui.newGame.addEventListener("click", resetGame);
   ui.closeSummary.addEventListener("click", () => {
@@ -983,9 +1321,21 @@ function gameText() {
     gold: save.gold,
     vatCount: save.vat.length,
     team: teamPlasmoids().map((p) => ({ name: p.name, type: p.type, hp: p.maxHp, attack: p.attack, defense: p.defense, speed: p.speed })),
+    teamPower: Math.round(teamPower(teamPlasmoids())),
+    plannedBattle: plannedBattle ? {
+      enemy: plannedBattle.enemy.map((p) => ({ name: p.name, type: p.type, hp: p.maxHp, attack: p.attack, defense: p.defense, speed: p.speed })),
+      enemyPower: Math.round(teamPower(plannedBattle.enemy)),
+      selection: plannedBattle.selection
+        .map((id) => save.vat.find((p) => p.id === id))
+        .filter(Boolean)
+        .map((p) => ({ name: p.name, type: p.type, hp: p.maxHp, attack: p.attack, defense: p.defense, speed: p.speed })),
+    } : null,
     battle: battle ? {
+      kind: battle.kind,
       activePlayer: active("player") ? { name: active("player").name, type: active("player").type, hp: active("player").hp, maxHp: active("player").maxHp } : null,
       activeEnemy: active("enemy") ? { name: active("enemy").name, type: active("enemy").type, hp: active("enemy").hp, maxHp: active("enemy").maxHp } : null,
+      playerPower: Math.round(teamPower(battle.player)),
+      enemyPower: Math.round(teamPower(battle.enemy)),
       playerRemaining: livingIndexes(battle.player).length,
       enemyRemaining: livingIndexes(battle.enemy).length,
       finished: battle.finished,
