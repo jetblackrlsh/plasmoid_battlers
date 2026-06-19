@@ -313,7 +313,8 @@ h1 {
   gap: 12px;
 }
 
-.daily-reward-art {
+.daily-reward-art,
+.mission-art {
   width: 100%;
   display: block;
   aspect-ratio: 16 / 9;
@@ -322,6 +323,10 @@ h1 {
   border: 1px solid rgba(255, 255, 255, 0.8);
   box-shadow: 0 18px 42px rgba(255, 79, 216, 0.22), 0 0 34px rgba(255, 212, 71, 0.24);
   background: #151128;
+}
+
+.mission-art {
+  box-shadow: 0 18px 42px rgba(0, 217, 255, 0.2), 0 0 34px rgba(124, 77, 255, 0.24);
 }
 
 .daily-reward-copy,

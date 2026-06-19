@@ -89,8 +89,8 @@ const MISSION_DEFS = [
 
 const MUSIC = {
   home: "Music/Plasmoid%20Battlers%20Home.mp3",
-  daily: "Music/Plasmoid%20Battlers%20Home.mp3",
-  missions: "Music/Plasmoid%20Battlers%20Home.mp3",
+  daily: "Music/Daily%20Gold%20Rush.mp3",
+  missions: "Music/Plasmoid%20Mission%20Briefing.mp3",
   battle: "Music/Plasmoid%20Battle%20Anthem.mp3",
   gacha: "Music/Summoning%20the%20Plasmoids.mp3",
   manage: "Music/Plasmoid%20Management%20Mode.mp3",
@@ -103,6 +103,7 @@ const MUSIC = {
 const ART = {
   home: "assets/art/home.png",
   daily: "assets/art/daily-gold.png",
+  missions: "assets/art/daily-missions.png",
   gacha: "assets/art/summon.png",
   victory: "assets/art/victory.png",
   defeat: "assets/art/defeat.png",
@@ -1283,57 +1284,18 @@ function renderHomeScene() {
 function renderDailyScene() {
   drawBackground("daily");
   drawTitle("Daily Gold", dailyGoldReady() ? "Claim 3 free gold today" : `Reward claimed - resets in ${nextDailyResetLabel()}`);
-  const pulse = 1 + Math.sin(t * 4) * 0.05;
-  ctx.save();
-  ctx.translate(640, 398);
-  ctx.scale(pulse, pulse);
-  drawRewardCoins(0, 0);
-  ctx.restore();
 }
 
 function renderMissionsScene() {
-  drawBackground("home");
+  drawBackground("missions");
   const daily = ensureDailyMissions();
   const completed = daily.missions.filter(missionCompleted).length;
   drawTitle("Daily Missions", `${completed}/3 complete - resets in ${nextDailyResetLabel()}`);
-  ctx.save();
-  daily.missions.forEach((mission, index) => {
-    const def = missionDefinition(mission.type);
-    const progress = missionProgress(mission);
-    const x = 190 + index * 310;
-    const y = 355 + Math.sin(t * 1.8 + index) * 10;
-    const complete = progress >= def.target;
-    ctx.fillStyle = complete ? "rgba(255, 212, 71, 0.88)" : "rgba(255,255,255,0.84)";
-    ctx.shadowBlur = complete ? 24 : 14;
-    ctx.shadowColor = complete ? "#ffd447" : "#00d9ff";
-    roundRect(x, y, 280, 138, 8, true);
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = "#17152c";
-    ctx.font = "900 24px Inter, sans-serif";
-    ctx.fillText(def.title, x + 18, y + 34);
-    ctx.font = "800 16px Inter, sans-serif";
-    wrapText(def.description, x + 18, y + 62, 230, 20);
-    ctx.fillStyle = "rgba(23,21,44,0.16)";
-    roundRect(x + 18, y + 106, 244, 14, 7, true);
-    ctx.fillStyle = complete ? "#ff7b00" : "#7c4dff";
-    roundRect(x + 18, y + 106, 244 * Math.min(1, progress / def.target), 14, 7, true);
-    ctx.fillStyle = "#17152c";
-    ctx.font = "900 16px Inter, sans-serif";
-    ctx.fillText(`${progress}/${def.target}   +${def.reward} gold`, x + 18, y + 132);
-  });
-  ctx.restore();
 }
 
 function renderGachaScene() {
   drawBackground("gacha");
   drawTitle("UAP Dogwhistle", save.gold >= 3 ? "A summon costs 3 gold" : "Win battles to earn more gold");
-  const pulse = 1 + Math.sin(t * 5) * 0.08;
-  ctx.save();
-  ctx.translate(640, 360);
-  ctx.rotate(Math.sin(t * 2.2) * 0.1);
-  ctx.scale(pulse, pulse);
-  drawDogwhistle(0, 0);
-  ctx.restore();
 }
 
 function renderVatScene() {
@@ -1351,7 +1313,6 @@ function renderVatScene() {
 function renderProfileScene() {
   drawBackground("victory");
   drawTitle("Battler Profile", `${save.profile.wins} victories • ${save.profile.plasmoidsDefeated} rival Plasmoids defeated`);
-  drawMedal(640, 390);
 }
 
 function renderHowToScene() {
@@ -1585,106 +1546,6 @@ function drawHealthBar(x, y, width, hp, maxHp, name) {
   const pct = Math.max(0, hp / maxHp);
   ctx.fillStyle = pct > 0.55 ? "#98ff45" : pct > 0.25 ? "#ffd447" : "#ff3864";
   roundRect(x + 14, y + 38, (width - 28) * pct, 14, 7, true);
-  ctx.restore();
-}
-
-function drawDogwhistle(x, y) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.shadowColor = "#fff";
-  ctx.shadowBlur = 20;
-  ctx.fillStyle = "#fff";
-  roundRect(-140, -28, 220, 56, 28, true);
-  ctx.fillStyle = "#ffd447";
-  ctx.beginPath();
-  ctx.moveTo(70, -35);
-  ctx.lineTo(154, -54);
-  ctx.lineTo(154, 54);
-  ctx.lineTo(70, 35);
-  ctx.closePath();
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.strokeStyle = "#17152c";
-  ctx.lineWidth = 10;
-  roundRect(-140, -28, 220, 56, 28, false, true);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(70, -35);
-  ctx.lineTo(154, -54);
-  ctx.lineTo(154, 54);
-  ctx.lineTo(70, 35);
-  ctx.closePath();
-  ctx.stroke();
-  ctx.fillStyle = "#ff4fd8";
-  ctx.beginPath();
-  ctx.arc(-96, 0, 16, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawRewardCoins(x, y) {
-  ctx.save();
-  ctx.translate(x, y);
-  const positions = [
-    [-116, 12, -0.2, 82],
-    [0, -18, 0.04, 104],
-    [118, 16, 0.18, 82],
-  ];
-  positions.forEach(([cx, cy, rotation, radius], index) => {
-    ctx.save();
-    ctx.translate(cx, cy + Math.sin(t * 3 + index) * 8);
-    ctx.rotate(rotation);
-    ctx.shadowBlur = 34;
-    ctx.shadowColor = "#ffd447";
-    const grad = ctx.createRadialGradient(-radius * 0.26, -radius * 0.32, radius * 0.08, 0, 0, radius);
-    grad.addColorStop(0, "#fff8b5");
-    grad.addColorStop(0.28, "#ffd447");
-    grad.addColorStop(0.72, "#ff9d00");
-    grad.addColorStop(1, "#b84e00");
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, radius, radius * 0.82, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = "rgba(255,255,255,0.86)";
-    ctx.lineWidth = Math.max(6, radius * 0.08);
-    ctx.beginPath();
-    ctx.ellipse(0, 0, radius * 0.74, radius * 0.58, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.fillStyle = "rgba(255,255,255,0.9)";
-    ctx.font = `900 ${Math.round(radius * 0.72)}px Inter, sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("G", 0, radius * 0.03);
-    ctx.restore();
-  });
-  ctx.restore();
-}
-
-function drawMedal(x, y) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.shadowBlur = 34;
-  ctx.shadowColor = "#ffd447";
-  ctx.fillStyle = "#ffd447";
-  ctx.beginPath();
-  for (let i = 0; i < 16; i++) {
-    const r = i % 2 === 0 ? 118 : 82;
-    const a = (i / 16) * Math.PI * 2 - Math.PI / 2;
-    ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-  }
-  ctx.closePath();
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = "#ff4fd8";
-  ctx.beginPath();
-  ctx.arc(0, 0, 68, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#fff";
-  ctx.font = "900 74px Inter, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("★", 0, 4);
   ctx.restore();
 }
 
