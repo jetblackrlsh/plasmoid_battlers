@@ -12,9 +12,85 @@ const TYPES = {
 };
 
 const TYPE_NAMES = Object.keys(TYPES);
+const MISSION_DEFS = [
+  {
+    type: "complete_battles",
+    title: "Battle Circuit",
+    description: "Complete 2 battles of any kind.",
+    stat: "battles",
+    target: 2,
+    reward: 2,
+  },
+  {
+    type: "win_battle",
+    title: "Victory Spark",
+    description: "Win 1 battle.",
+    stat: "wins",
+    target: 1,
+    reward: 3,
+  },
+  {
+    type: "defeat_plasmoids",
+    title: "Rival Cleanup",
+    description: "Defeat 3 rival Plasmoids.",
+    stat: "defeats",
+    target: 3,
+    reward: 3,
+  },
+  {
+    type: "attack_times",
+    title: "Pressure Combo",
+    description: "Use Attack 5 times.",
+    stat: "attacks",
+    target: 5,
+    reward: 2,
+  },
+  {
+    type: "deal_damage",
+    title: "Glow Burst",
+    description: "Deal 150 total damage.",
+    stat: "damageDealt",
+    target: 150,
+    reward: 3,
+  },
+  {
+    type: "switch_plasmoids",
+    title: "Smart Swaps",
+    description: "Switch Plasmoids 2 times during battle.",
+    stat: "switches",
+    target: 2,
+    reward: 2,
+  },
+  {
+    type: "planned_battle",
+    title: "Scout Route",
+    description: "Complete 1 Planned Battle.",
+    stat: "plannedBattles",
+    target: 1,
+    reward: 2,
+  },
+  {
+    type: "ranked_battle",
+    title: "Ladder Check",
+    description: "Complete 1 Ranked Battle.",
+    stat: "rankedBattles",
+    target: 1,
+    reward: 3,
+  },
+  {
+    type: "summon_plasmoid",
+    title: "Aurora Call",
+    description: "Summon 1 Plasmoid with the UAP Dogwhistle.",
+    stat: "summons",
+    target: 1,
+    reward: 2,
+  },
+];
+
 const MUSIC = {
   home: "Music/Plasmoid%20Battlers%20Home.mp3",
   daily: "Music/Plasmoid%20Battlers%20Home.mp3",
+  missions: "Music/Plasmoid%20Battlers%20Home.mp3",
   battle: "Music/Plasmoid%20Battle%20Anthem.mp3",
   gacha: "Music/Summoning%20the%20Plasmoids.mp3",
   manage: "Music/Plasmoid%20Management%20Mode.mp3",
@@ -56,6 +132,8 @@ const ui = {
   homeSummary: document.getElementById("home-summary"),
   dailyStatus: document.getElementById("daily-status"),
   dailyClaim: document.getElementById("daily-claim-btn"),
+  missionSummary: document.getElementById("mission-summary"),
+  missionList: document.getElementById("mission-list"),
   blindBattle: document.getElementById("blind-battle-btn"),
   blindRanked: document.getElementById("blind-ranked-btn"),
   plannedBattle: document.getElementById("planned-battle-btn"),
@@ -128,6 +206,7 @@ function defaultProfile() {
     plasmoidsDefeated: 0,
     goldEarned: 0,
     dailyClaims: 0,
+    missionClaims: 0,
     attacks: 0,
     damageDealt: 0,
     damageTaken: 0,
@@ -150,6 +229,7 @@ function makeStarterSave() {
     vat: starters,
     team: starters.map((p) => p.id),
     lastDailyGoldDate: "",
+    dailyMissions: createDailyMissions(todayKey(), starters[0].seed),
     profile: defaultProfile(),
   };
 }
@@ -163,6 +243,7 @@ function loadSave() {
     parsed.rankLevel = Number.isFinite(parsed.rankLevel) ? parsed.rankLevel : 100;
     parsed.gold = Number.isFinite(parsed.gold) ? parsed.gold : 0;
     parsed.lastDailyGoldDate = typeof parsed.lastDailyGoldDate === "string" ? parsed.lastDailyGoldDate : "";
+    parsed.dailyMissions = normalizeDailyMissions(parsed.dailyMissions, parsed.vat[0]?.seed);
     parsed.profile = { ...defaultProfile(), ...(parsed.profile || {}) };
     parsed.team = Array.isArray(parsed.team)
       ? parsed.team.filter((id) => parsed.vat.some((p) => p.id === id)).slice(0, 3)
@@ -197,6 +278,133 @@ function nextDailyResetLabel(now = new Date()) {
 
 function dailyGoldReady() {
   return save.lastDailyGoldDate !== todayKey();
+}
+
+function defaultDailyMissionStats() {
+  return {
+    battles: 0,
+    wins: 0,
+    defeats: 0,
+    attacks: 0,
+    damageDealt: 0,
+    switches: 0,
+    plannedBattles: 0,
+    rankedBattles: 0,
+    summons: 0,
+  };
+}
+
+function hashString(value) {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return hash || 1;
+}
+
+function missionDefinition(type) {
+  return MISSION_DEFS.find((mission) => mission.type === type) || MISSION_DEFS[0];
+}
+
+function knownMissionType(type) {
+  return MISSION_DEFS.some((mission) => mission.type === type);
+}
+
+function seededMissionShuffle(seed) {
+  const pool = MISSION_DEFS.slice();
+  for (let i = pool.length - 1; i > 0; i--) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    const j = seed % (i + 1);
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool;
+}
+
+function createDailyMissions(date = todayKey(), seedBase = 17) {
+  const seed = hashString(`${date}-${seedBase}`);
+  return {
+    date,
+    stats: defaultDailyMissionStats(),
+    missions: seededMissionShuffle(seed).slice(0, 3).map((mission) => ({
+      type: mission.type,
+      claimed: false,
+    })),
+  };
+}
+
+function normalizeDailyMissions(dailyMissions, seedBase = 17) {
+  const today = todayKey();
+  if (!dailyMissions || dailyMissions.date !== today || !Array.isArray(dailyMissions.missions)) {
+    return createDailyMissions(today, seedBase);
+  }
+  const seen = new Set();
+  const missions = dailyMissions.missions
+    .filter((mission) => knownMissionType(mission.type) && !seen.has(mission.type) && seen.add(mission.type))
+    .slice(0, 3)
+    .map((mission) => ({ type: mission.type, claimed: Boolean(mission.claimed) }));
+  if (missions.length !== 3) return createDailyMissions(today, seedBase);
+  return {
+    date: today,
+    stats: { ...defaultDailyMissionStats(), ...(dailyMissions.stats || {}) },
+    missions,
+  };
+}
+
+function ensureDailyMissions() {
+  const before = save.dailyMissions?.date;
+  save.dailyMissions = normalizeDailyMissions(save.dailyMissions, save.vat?.[0]?.seed);
+  if (save.dailyMissions.date !== before) persist();
+  return save.dailyMissions;
+}
+
+function missionProgress(mission) {
+  const def = missionDefinition(mission.type);
+  const stats = ensureDailyMissions().stats;
+  return Math.min(def.target, Math.max(0, stats[def.stat] || 0));
+}
+
+function missionProgressForStats(mission, stats) {
+  const def = missionDefinition(mission.type);
+  return Math.min(def.target, Math.max(0, stats[def.stat] || 0));
+}
+
+function missionCompleted(mission) {
+  return missionProgress(mission) >= missionDefinition(mission.type).target;
+}
+
+function addMissionProgress(stat, amount = 1) {
+  const daily = ensureDailyMissions();
+  const beforeReady = daily.missions.filter((mission) => !mission.claimed && missionProgressForStats(mission, daily.stats) >= missionDefinition(mission.type).target).length;
+  daily.stats[stat] = Math.max(0, (daily.stats[stat] || 0) + amount);
+  const afterReady = daily.missions.filter((mission) => !mission.claimed && missionProgressForStats(mission, daily.stats) >= missionDefinition(mission.type).target).length;
+  if (afterReady > beforeReady) notify("Daily mission complete. Claim your gold.");
+}
+
+function claimMission(index) {
+  const daily = ensureDailyMissions();
+  const mission = daily.missions[index];
+  if (!mission) return;
+  const def = missionDefinition(mission.type);
+  const complete = missionProgressForStats(mission, daily.stats) >= def.target;
+  if (mission.claimed) {
+    notify("Mission reward already claimed.");
+    playSfx("blocked");
+    return;
+  }
+  if (!complete) {
+    notify("Complete the mission before claiming its gold.");
+    playSfx("blocked");
+    return;
+  }
+  mission.claimed = true;
+  save.gold += def.reward;
+  save.profile.goldEarned += def.reward;
+  save.profile.missionClaims += 1;
+  persist();
+  playSfx("gold");
+  fx.push({ type: "missionGold", timer: 0, x: 640, y: 340, amount: def.reward });
+  notify(`Claimed ${def.reward} mission gold.`);
+  renderAll();
 }
 
 function seeded(seed) {
@@ -467,6 +675,7 @@ function playerAttack() {
   playSfx("attack");
   battle.stats.attacks += 1;
   save.profile.attacks += 1;
+  addMissionProgress("attacks", 1);
   const enemyWillSwitch = shouldEnemySwitch();
   const player = active("player");
   const enemy = active("enemy");
@@ -491,6 +700,7 @@ function resolveAttack(side) {
   if (side === "player") {
     battle.stats.damageDealt += damage;
     save.profile.damageDealt += damage;
+    addMissionProgress("damageDealt", damage);
   } else {
     battle.stats.damageTaken += damage;
     save.profile.damageTaken += damage;
@@ -511,6 +721,7 @@ function defeatPlasmoid(side) {
     save.gold += 1;
     save.profile.plasmoidsDefeated += 1;
     save.profile.goldEarned += 1;
+    addMissionProgress("defeats", 1);
     playSfx("gold");
     fx.push({ type: "gold", timer: 0, x: 835, y: 215 });
     const next = firstLiving(battle.enemy);
@@ -565,6 +776,10 @@ function checkBattleEnd() {
   save.profile.battles += 1;
   save.profile[battle.kind === "planned" ? "plannedBattles" : "blindBattles"] += 1;
   save.profile[battle.result === "win" ? "wins" : "losses"] += 1;
+  addMissionProgress("battles", 1);
+  if (battle.result === "win") addMissionProgress("wins", 1);
+  if (battle.kind === "planned") addMissionProgress("plannedBattles", 1);
+  if (battle.ranked) addMissionProgress("rankedBattles", 1);
   save.profile.longestBattleMs = Math.max(save.profile.longestBattleMs, elapsed);
   persist();
   ui.battleActions.classList.add("hidden");
@@ -597,6 +812,7 @@ function playerSwitch(index) {
   battle.activePlayer = index;
   battle.stats.switches += 1;
   save.profile.switches += 1;
+  addMissionProgress("switches", 1);
   playSfx("switch");
   fx.push({ type: "switch", timer: 0, x: 390, y: 332 });
   pushLog(`You switch to ${target.name}.`);
@@ -652,6 +868,7 @@ function summonPlasmoid() {
   const summoned = createPlasmoid();
   save.vat.push(summoned);
   save.profile.summons += 1;
+  addMissionProgress("summons", 1);
   selectedVatId = summoned.id;
   persist();
   playSfx("summon");
@@ -719,6 +936,7 @@ function titleForMode(value) {
   return {
     home: "Home",
     daily: "Daily Gold",
+    missions: "Daily Missions",
     battle: "Battle Mode",
     gacha: "Gacha Mode",
     manage: "Management Mode",
@@ -733,6 +951,7 @@ function renderAll() {
   ui.summon.disabled = save.gold < 3;
   renderHome();
   renderDaily();
+  renderMissions();
   renderRiskOptions();
   renderBattleControls();
   renderPlannedSetup();
@@ -754,14 +973,61 @@ function renderDaily() {
 
 function renderHome() {
   const team = teamPlasmoids();
+  const daily = ensureDailyMissions();
+  const readyMissions = daily.missions.filter((mission) => !mission.claimed && missionCompleted(mission)).length;
+  const claimedMissions = daily.missions.filter((mission) => mission.claimed).length;
   ui.homeSummary.innerHTML = [
     `<div><strong>Daily Gold:</strong> ${dailyGoldReady() ? "Ready to claim" : `Claimed today - ${nextDailyResetLabel()} until reset`}</div>`,
+    `<div><strong>Daily Missions:</strong> ${readyMissions ? `${readyMissions} reward${readyMissions === 1 ? "" : "s"} ready` : `${claimedMissions}/3 rewards claimed`}</div>`,
     `<div><strong>Team:</strong> ${team.map((p) => p.name).join(", ")}</div>`,
     `<div><strong>Team Power:</strong> ${Math.round(teamPower(team))}</div>`,
     `<div><strong>Rank Level:</strong> ${save.rankLevel}</div>`,
     `<div><strong>Vat:</strong> ${save.vat.length} Plasmoids collected</div>`,
     `<div><strong>Record:</strong> ${save.profile.wins}W / ${save.profile.losses}L</div>`,
   ].join("");
+}
+
+function renderMissions() {
+  if (!ui.missionSummary || !ui.missionList) return;
+  const daily = ensureDailyMissions();
+  const completed = daily.missions.filter(missionCompleted).length;
+  const claimed = daily.missions.filter((mission) => mission.claimed).length;
+  const availableGold = daily.missions.reduce((total, mission) => {
+    const def = missionDefinition(mission.type);
+    return total + (!mission.claimed && missionCompleted(mission) ? def.reward : 0);
+  }, 0);
+  ui.missionSummary.innerHTML = [
+    `<strong>${completed}/3 complete · ${claimed}/3 claimed</strong>`,
+    `<span>${availableGold ? `${availableGold} gold waiting to claim` : `New missions in ${nextDailyResetLabel()}`}</span>`,
+  ].join("");
+  ui.missionList.innerHTML = daily.missions.map((mission, index) => {
+    const def = missionDefinition(mission.type);
+    const progress = missionProgress(mission);
+    const complete = progress >= def.target;
+    const pct = Math.round((progress / def.target) * 100);
+    const state = mission.claimed ? "claimed" : complete ? "complete" : "";
+    const buttonText = mission.claimed ? "Claimed" : complete ? `Claim ${def.reward} Gold` : `${progress}/${def.target}`;
+    return `
+      <article class="mission-card ${state}">
+        <div class="mission-card-top">
+          <div>
+            <h3>${escapeHtml(def.title)}</h3>
+            <p>${escapeHtml(def.description)}</p>
+          </div>
+          <span class="mission-reward">+${def.reward}</span>
+        </div>
+        <div class="mission-progress" aria-label="${escapeHtml(def.title)} progress">
+          <span style="width:${pct}%"></span>
+        </div>
+        <div class="mission-card-bottom">
+          <span>${progress}/${def.target}</span>
+          <button class="mini-btn mission-claim-btn" type="button" data-mission-claim="${index}" ${complete && !mission.claimed ? "" : "disabled"}>${buttonText}</button>
+        </div>
+      </article>`;
+  }).join("");
+  [...ui.missionList.querySelectorAll("[data-mission-claim]")].forEach((button) => {
+    button.addEventListener("click", () => claimMission(Number(button.dataset.missionClaim)));
+  });
 }
 
 function renderRiskOptions() {
@@ -922,6 +1188,7 @@ function renderProfile() {
     ["Plasmoids Defeated", p.plasmoidsDefeated],
     ["Gold Earned", p.goldEarned],
     ["Daily Claims", p.dailyClaims],
+    ["Mission Claims", p.missionClaims],
     ["Summons", p.summons],
     ["Attacks", p.attacks],
     ["Switches", p.switches],
@@ -998,6 +1265,7 @@ function render() {
   ctx.clearRect(0, 0, W, H);
   if (mode === "battle") renderBattleScene();
   else if (mode === "daily") renderDailyScene();
+  else if (mode === "missions") renderMissionsScene();
   else if (mode === "gacha") renderGachaScene();
   else if (mode === "manage") renderVatScene();
   else if (mode === "profile") renderProfileScene();
@@ -1020,6 +1288,39 @@ function renderDailyScene() {
   ctx.translate(640, 398);
   ctx.scale(pulse, pulse);
   drawRewardCoins(0, 0);
+  ctx.restore();
+}
+
+function renderMissionsScene() {
+  drawBackground("home");
+  const daily = ensureDailyMissions();
+  const completed = daily.missions.filter(missionCompleted).length;
+  drawTitle("Daily Missions", `${completed}/3 complete - resets in ${nextDailyResetLabel()}`);
+  ctx.save();
+  daily.missions.forEach((mission, index) => {
+    const def = missionDefinition(mission.type);
+    const progress = missionProgress(mission);
+    const x = 190 + index * 310;
+    const y = 355 + Math.sin(t * 1.8 + index) * 10;
+    const complete = progress >= def.target;
+    ctx.fillStyle = complete ? "rgba(255, 212, 71, 0.88)" : "rgba(255,255,255,0.84)";
+    ctx.shadowBlur = complete ? 24 : 14;
+    ctx.shadowColor = complete ? "#ffd447" : "#00d9ff";
+    roundRect(x, y, 280, 138, 8, true);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#17152c";
+    ctx.font = "900 24px Inter, sans-serif";
+    ctx.fillText(def.title, x + 18, y + 34);
+    ctx.font = "800 16px Inter, sans-serif";
+    wrapText(def.description, x + 18, y + 62, 230, 20);
+    ctx.fillStyle = "rgba(23,21,44,0.16)";
+    roundRect(x + 18, y + 106, 244, 14, 7, true);
+    ctx.fillStyle = complete ? "#ff7b00" : "#7c4dff";
+    roundRect(x + 18, y + 106, 244 * Math.min(1, progress / def.target), 14, 7, true);
+    ctx.fillStyle = "#17152c";
+    ctx.font = "900 16px Inter, sans-serif";
+    ctx.fillText(`${progress}/${def.target}   +${def.reward} gold`, x + 18, y + 132);
+  });
   ctx.restore();
 }
 
@@ -1402,10 +1703,10 @@ function drawFx() {
       ctx.fillStyle = "#fff";
       ctx.font = "900 42px Inter, sans-serif";
       ctx.fillText(`-${effect.damage}`, effect.x, effect.y - life * 90);
-    } else if (effect.type === "gold" || effect.type === "dailyGold") {
+    } else if (effect.type === "gold" || effect.type === "dailyGold" || effect.type === "missionGold") {
       ctx.fillStyle = "#ffd447";
       ctx.font = "900 64px Inter, sans-serif";
-      ctx.fillText(effect.type === "dailyGold" ? "+3" : "+1", effect.x, effect.y - life * 110);
+      ctx.fillText(effect.type === "gold" ? "+1" : `+${effect.amount || 3}`, effect.x, effect.y - life * 110);
     } else if (effect.type === "summon") {
       ctx.strokeStyle = "#fff";
       ctx.lineWidth = 10;
@@ -1497,7 +1798,7 @@ function playMusic(track) {
   }
   currentMusic = new Audio(url);
   currentMusic.dataset.url = url;
-  currentMusic.loop = ["home", "daily", "battle", "gacha", "manage", "profile", "howto"].includes(track);
+  currentMusic.loop = ["home", "daily", "missions", "battle", "gacha", "manage", "profile", "howto"].includes(track);
   currentMusic.volume = 0.38;
   currentMusic.play().catch(() => {});
 }
@@ -1639,6 +1940,7 @@ function gameText() {
     gold: save.gold,
     dailyGoldReady: dailyGoldReady(),
     lastDailyGoldDate: save.lastDailyGoldDate,
+    dailyMissions: ensureDailyMissions(),
     rankLevel: save.rankLevel,
     vatCount: save.vat.length,
     team: teamPlasmoids().map((p) => ({ name: p.name, type: p.type, hp: p.maxHp, attack: p.attack, defense: p.defense, speed: p.speed })),

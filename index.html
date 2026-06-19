@@ -38,6 +38,7 @@
         <nav class="mode-tabs" aria-label="Mode selection">
           <button class="mode-tab active" type="button" data-mode="home">Home</button>
           <button class="mode-tab" type="button" data-mode="daily">Daily</button>
+          <button class="mode-tab" type="button" data-mode="missions">Missions</button>
           <button class="mode-tab" type="button" data-mode="battle">Battle</button>
           <button class="mode-tab" type="button" data-mode="gacha">Gacha</button>
           <button class="mode-tab" type="button" data-mode="manage">Manage</button>
@@ -50,6 +51,7 @@
             <button class="primary-action" type="button" data-mode="battle" data-battle-shortcut="blind">Blind Battle</button>
             <button class="primary-action" type="button" data-mode="battle" data-battle-shortcut="planned">Planned Battle</button>
             <button class="primary-action daily-action" type="button" data-mode="daily">Claim Daily Gold</button>
+            <button class="primary-action mission-action" type="button" data-mode="missions">Daily Missions</button>
             <button class="primary-action" type="button" data-mode="gacha">Use UAP Dogwhistle</button>
             <button class="primary-action" type="button" data-mode="manage">Manage Team</button>
             <button class="primary-action" type="button" data-mode="howto">How To Play</button>
@@ -67,6 +69,17 @@
               <div id="daily-status" class="daily-status"></div>
               <button id="daily-claim-btn" class="primary-action daily-action" type="button">Claim 3 Free Gold</button>
             </div>
+          </div>
+        </div>
+
+        <div id="panel-missions" class="panel">
+          <div class="mission-board">
+            <div class="mission-header">
+              <h2>Daily Missions</h2>
+              <p class="mode-copy">Complete today's three missions to earn bonus gold through regular play.</p>
+              <div id="mission-summary" class="mission-summary"></div>
+            </div>
+            <div id="mission-list" class="mission-list"></div>
           </div>
         </div>
 

@@ -359,6 +359,132 @@ h1 {
   font-size: 0.9rem;
 }
 
+.primary-action.mission-action {
+  background: linear-gradient(135deg, #7c4dff, #00d9ff 52%, #98ff45);
+  color: #fff;
+  box-shadow: 0 12px 28px rgba(124, 77, 255, 0.28), 0 0 24px rgba(0, 217, 255, 0.22);
+}
+
+.mission-board {
+  display: grid;
+  gap: 12px;
+}
+
+.mission-header,
+.mission-card {
+  padding: 12px;
+  border: 1px solid rgba(23, 21, 44, 0.12);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.mission-header {
+  display: grid;
+  gap: 10px;
+}
+
+.mission-header h2 {
+  font-size: 1.55rem;
+}
+
+.mission-summary {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border-radius: var(--radius);
+  background:
+    radial-gradient(circle at 10% 25%, rgba(0, 217, 255, 0.24), transparent 44%),
+    rgba(255, 255, 255, 0.72);
+  font-weight: 850;
+}
+
+.mission-summary span {
+  color: rgba(23, 21, 44, 0.68);
+  font-size: 0.9rem;
+}
+
+.mission-list {
+  display: grid;
+  gap: 10px;
+}
+
+.mission-card {
+  display: grid;
+  gap: 10px;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.mission-card.complete {
+  border-color: rgba(255, 212, 71, 0.72);
+  box-shadow: 0 0 28px rgba(255, 212, 71, 0.24);
+}
+
+.mission-card.claimed {
+  opacity: 0.78;
+}
+
+.mission-card-top,
+.mission-card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mission-card h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.mission-card p {
+  margin: 3px 0 0;
+  color: rgba(23, 21, 44, 0.72);
+  font-size: 0.9rem;
+  line-height: 1.3;
+  font-weight: 700;
+}
+
+.mission-reward {
+  min-width: 48px;
+  min-height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  background: radial-gradient(circle at 35% 30%, #fff8b5, #ffd447 48%, #ff9d00);
+  color: #17152c;
+  font-weight: 950;
+  box-shadow: 0 0 18px rgba(255, 212, 71, 0.45);
+}
+
+.mission-progress {
+  height: 13px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(23, 21, 44, 0.12);
+}
+
+.mission-progress span {
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #7c4dff, #00d9ff 54%, #98ff45);
+}
+
+.mission-card.complete .mission-progress span,
+.mission-card.claimed .mission-progress span {
+  background: linear-gradient(90deg, #ffd447, #ff9d00);
+}
+
+.mission-card-bottom {
+  font-weight: 900;
+}
+
+.mission-claim-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  filter: grayscale(0.45);
+}
+
 .mode-copy {
   margin: 0 0 12px;
   line-height: 1.45;
