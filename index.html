@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Plasmoid Battlers</title>
     <meta name="description" content="Collect glowing Plasmoids, manage your team, and battle rival battlers.">
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
@@ -36,6 +37,7 @@
 
         <nav class="mode-tabs" aria-label="Mode selection">
           <button class="mode-tab active" type="button" data-mode="home">Home</button>
+          <button class="mode-tab" type="button" data-mode="daily">Daily</button>
           <button class="mode-tab" type="button" data-mode="battle">Battle</button>
           <button class="mode-tab" type="button" data-mode="gacha">Gacha</button>
           <button class="mode-tab" type="button" data-mode="manage">Manage</button>
@@ -47,12 +49,25 @@
           <div class="action-grid">
             <button class="primary-action" type="button" data-mode="battle" data-battle-shortcut="blind">Blind Battle</button>
             <button class="primary-action" type="button" data-mode="battle" data-battle-shortcut="planned">Planned Battle</button>
+            <button class="primary-action daily-action" type="button" data-mode="daily">Claim Daily Gold</button>
             <button class="primary-action" type="button" data-mode="gacha">Use UAP Dogwhistle</button>
             <button class="primary-action" type="button" data-mode="manage">Manage Team</button>
             <button class="primary-action" type="button" data-mode="howto">How To Play</button>
             <button class="primary-action" type="button" data-mode="profile">Player Profile</button>
           </div>
           <div class="compact-stats" id="home-summary"></div>
+        </div>
+
+        <div id="panel-daily" class="panel">
+          <div class="daily-reward">
+            <img class="daily-reward-art" src="assets/art/daily-gold.png" alt="Three glowing gold coins surrounded by neon Plasmoid energy">
+            <div class="daily-reward-copy">
+              <h2>Daily Gold</h2>
+              <p class="mode-copy">Claim 3 free gold once each day. Come back tomorrow for another boost toward your next UAP Dogwhistle summon.</p>
+              <div id="daily-status" class="daily-status"></div>
+              <button id="daily-claim-btn" class="primary-action daily-action" type="button">Claim 3 Free Gold</button>
+            </div>
+          </div>
         </div>
 
         <div id="panel-battle" class="panel">

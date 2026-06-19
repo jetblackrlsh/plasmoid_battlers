@@ -14,6 +14,7 @@ const TYPES = {
 const TYPE_NAMES = Object.keys(TYPES);
 const MUSIC = {
   home: "Music/Plasmoid%20Battlers%20Home.mp3",
+  daily: "Music/Plasmoid%20Battlers%20Home.mp3",
   battle: "Music/Plasmoid%20Battle%20Anthem.mp3",
   gacha: "Music/Summoning%20the%20Plasmoids.mp3",
   manage: "Music/Plasmoid%20Management%20Mode.mp3",
@@ -25,6 +26,7 @@ const MUSIC = {
 
 const ART = {
   home: "assets/art/home.png",
+  daily: "assets/art/daily-gold.png",
   gacha: "assets/art/summon.png",
   victory: "assets/art/victory.png",
   defeat: "assets/art/defeat.png",
@@ -52,6 +54,8 @@ const ui = {
   soundToggle: document.getElementById("sound-toggle"),
   fullscreen: document.getElementById("fullscreen-btn"),
   homeSummary: document.getElementById("home-summary"),
+  dailyStatus: document.getElementById("daily-status"),
+  dailyClaim: document.getElementById("daily-claim-btn"),
   blindBattle: document.getElementById("blind-battle-btn"),
   blindRanked: document.getElementById("blind-ranked-btn"),
   plannedBattle: document.getElementById("planned-battle-btn"),
@@ -123,6 +127,7 @@ function defaultProfile() {
     losses: 0,
     plasmoidsDefeated: 0,
     goldEarned: 0,
+    dailyClaims: 0,
     attacks: 0,
     damageDealt: 0,
     damageTaken: 0,
@@ -144,6 +149,7 @@ function makeStarterSave() {
     rankLevel: 100,
     vat: starters,
     team: starters.map((p) => p.id),
+    lastDailyGoldDate: "",
     profile: defaultProfile(),
   };
 }
@@ -155,6 +161,8 @@ function loadSave() {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed.vat) || parsed.vat.length < 3) return makeStarterSave();
     parsed.rankLevel = Number.isFinite(parsed.rankLevel) ? parsed.rankLevel : 100;
+    parsed.gold = Number.isFinite(parsed.gold) ? parsed.gold : 0;
+    parsed.lastDailyGoldDate = typeof parsed.lastDailyGoldDate === "string" ? parsed.lastDailyGoldDate : "";
     parsed.profile = { ...defaultProfile(), ...(parsed.profile || {}) };
     parsed.team = Array.isArray(parsed.team)
       ? parsed.team.filter((id) => parsed.vat.some((p) => p.id === id)).slice(0, 3)
@@ -168,6 +176,27 @@ function loadSave() {
 
 function persist() {
   localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+}
+
+function todayKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function nextDailyResetLabel(now = new Date()) {
+  const reset = new Date(now);
+  reset.setHours(24, 0, 0, 0);
+  const minutes = Math.max(1, Math.ceil((reset - now) / 60000));
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours <= 0) return `${mins}m`;
+  return `${hours}h ${mins}m`;
+}
+
+function dailyGoldReady() {
+  return save.lastDailyGoldDate !== todayKey();
 }
 
 function seeded(seed) {
@@ -633,6 +662,24 @@ function summonPlasmoid() {
   renderAll();
 }
 
+function claimDailyGold() {
+  if (!dailyGoldReady()) {
+    notify(`Daily gold refreshes in ${nextDailyResetLabel()}.`);
+    playSfx("blocked");
+    renderDaily();
+    return;
+  }
+  save.gold += 3;
+  save.lastDailyGoldDate = todayKey();
+  save.profile.goldEarned += 3;
+  save.profile.dailyClaims += 1;
+  persist();
+  playSfx("gold");
+  fx.push({ type: "dailyGold", timer: 0, x: 640, y: 340 });
+  notify("Claimed 3 free daily gold.");
+  renderAll();
+}
+
 function toggleTeam(id) {
   const exists = save.team.includes(id);
   if (exists) {
@@ -671,6 +718,7 @@ function setMode(next) {
 function titleForMode(value) {
   return {
     home: "Home",
+    daily: "Daily Gold",
     battle: "Battle Mode",
     gacha: "Gacha Mode",
     manage: "Management Mode",
@@ -684,6 +732,7 @@ function renderAll() {
   ui.rank.textContent = save.rankLevel;
   ui.summon.disabled = save.gold < 3;
   renderHome();
+  renderDaily();
   renderRiskOptions();
   renderBattleControls();
   renderPlannedSetup();
@@ -693,9 +742,20 @@ function renderAll() {
   render();
 }
 
+function renderDaily() {
+  if (!ui.dailyStatus || !ui.dailyClaim) return;
+  const ready = dailyGoldReady();
+  ui.dailyClaim.disabled = !ready;
+  ui.dailyClaim.textContent = ready ? "Claim 3 Free Gold" : "Claimed Today";
+  ui.dailyStatus.innerHTML = ready
+    ? `<strong>Reward ready now</strong><span>Claim today for +3 gold, enough for one UAP Dogwhistle summon.</span>`
+    : `<strong>Today's reward claimed</strong><span>Next free gold in ${nextDailyResetLabel()}.</span>`;
+}
+
 function renderHome() {
   const team = teamPlasmoids();
   ui.homeSummary.innerHTML = [
+    `<div><strong>Daily Gold:</strong> ${dailyGoldReady() ? "Ready to claim" : `Claimed today - ${nextDailyResetLabel()} until reset`}</div>`,
     `<div><strong>Team:</strong> ${team.map((p) => p.name).join(", ")}</div>`,
     `<div><strong>Team Power:</strong> ${Math.round(teamPower(team))}</div>`,
     `<div><strong>Rank Level:</strong> ${save.rankLevel}</div>`,
@@ -723,6 +783,7 @@ function renderRiskOptions() {
 }
 
 function renderBattleControls() {
+  ui.attack.classList.remove("attack-advantage", "attack-disadvantage");
   if (!battle || battle.finished) {
     ui.battleSetup.classList.remove("hidden");
     ui.battleActions.classList.add("hidden");
@@ -738,6 +799,9 @@ function renderBattleControls() {
   ui.battleActions.classList.remove("hidden");
   ui.battleLog.classList.remove("hidden");
   ui.battlePowerSummary.classList.remove("hidden");
+  const matchup = typeMultiplier(active("player"), active("enemy"));
+  ui.attack.classList.toggle("attack-advantage", matchup > 1);
+  ui.attack.classList.toggle("attack-disadvantage", matchup < 1);
   ui.battlePowerSummary.innerHTML = `<strong>${battleLabel()}</strong><span>Your Power ${Math.round(battle.playerBasePower)}</span><span>Enemy Power ${Math.round(battle.enemyBasePower)}</span>`;
   ui.switchButtons.innerHTML = battle.player.map((p, index) => {
     const disabled = p.defeated || index === battle.activePlayer ? "disabled" : "";
@@ -857,6 +921,7 @@ function renderProfile() {
     ["Win Rate", winRate],
     ["Plasmoids Defeated", p.plasmoidsDefeated],
     ["Gold Earned", p.goldEarned],
+    ["Daily Claims", p.dailyClaims],
     ["Summons", p.summons],
     ["Attacks", p.attacks],
     ["Switches", p.switches],
@@ -932,6 +997,7 @@ function drawBackground(kind) {
 function render() {
   ctx.clearRect(0, 0, W, H);
   if (mode === "battle") renderBattleScene();
+  else if (mode === "daily") renderDailyScene();
   else if (mode === "gacha") renderGachaScene();
   else if (mode === "manage") renderVatScene();
   else if (mode === "profile") renderProfileScene();
@@ -944,6 +1010,17 @@ function renderHomeScene() {
   drawBackground("home");
   drawTitle("Plasmoid Battlers", "Collect • Manage • Battle");
   teamPlasmoids().forEach((p, i) => drawPlasmoid(p, 420 + i * 210, 450 + Math.sin(t * 2 + i) * 14, 72, true));
+}
+
+function renderDailyScene() {
+  drawBackground("daily");
+  drawTitle("Daily Gold", dailyGoldReady() ? "Claim 3 free gold today" : `Reward claimed - resets in ${nextDailyResetLabel()}`);
+  const pulse = 1 + Math.sin(t * 4) * 0.05;
+  ctx.save();
+  ctx.translate(640, 398);
+  ctx.scale(pulse, pulse);
+  drawRewardCoins(0, 0);
+  ctx.restore();
 }
 
 function renderGachaScene() {
@@ -1244,6 +1321,45 @@ function drawDogwhistle(x, y) {
   ctx.restore();
 }
 
+function drawRewardCoins(x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  const positions = [
+    [-116, 12, -0.2, 82],
+    [0, -18, 0.04, 104],
+    [118, 16, 0.18, 82],
+  ];
+  positions.forEach(([cx, cy, rotation, radius], index) => {
+    ctx.save();
+    ctx.translate(cx, cy + Math.sin(t * 3 + index) * 8);
+    ctx.rotate(rotation);
+    ctx.shadowBlur = 34;
+    ctx.shadowColor = "#ffd447";
+    const grad = ctx.createRadialGradient(-radius * 0.26, -radius * 0.32, radius * 0.08, 0, 0, radius);
+    grad.addColorStop(0, "#fff8b5");
+    grad.addColorStop(0.28, "#ffd447");
+    grad.addColorStop(0.72, "#ff9d00");
+    grad.addColorStop(1, "#b84e00");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius, radius * 0.82, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(255,255,255,0.86)";
+    ctx.lineWidth = Math.max(6, radius * 0.08);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius * 0.74, radius * 0.58, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.font = `900 ${Math.round(radius * 0.72)}px Inter, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("G", 0, radius * 0.03);
+    ctx.restore();
+  });
+  ctx.restore();
+}
+
 function drawMedal(x, y) {
   ctx.save();
   ctx.translate(x, y);
@@ -1286,10 +1402,10 @@ function drawFx() {
       ctx.fillStyle = "#fff";
       ctx.font = "900 42px Inter, sans-serif";
       ctx.fillText(`-${effect.damage}`, effect.x, effect.y - life * 90);
-    } else if (effect.type === "gold") {
+    } else if (effect.type === "gold" || effect.type === "dailyGold") {
       ctx.fillStyle = "#ffd447";
       ctx.font = "900 64px Inter, sans-serif";
-      ctx.fillText("+1", effect.x, effect.y - life * 110);
+      ctx.fillText(effect.type === "dailyGold" ? "+3" : "+1", effect.x, effect.y - life * 110);
     } else if (effect.type === "summon") {
       ctx.strokeStyle = "#fff";
       ctx.lineWidth = 10;
@@ -1381,7 +1497,7 @@ function playMusic(track) {
   }
   currentMusic = new Audio(url);
   currentMusic.dataset.url = url;
-  currentMusic.loop = ["home", "battle", "gacha", "manage", "profile", "howto"].includes(track);
+  currentMusic.loop = ["home", "daily", "battle", "gacha", "manage", "profile", "howto"].includes(track);
   currentMusic.volume = 0.38;
   currentMusic.play().catch(() => {});
 }
@@ -1465,6 +1581,7 @@ function installEvents() {
   ui.attack.addEventListener("click", playerAttack);
   ui.forfeit.addEventListener("click", forfeitBattle);
   ui.summon.addEventListener("click", summonPlasmoid);
+  ui.dailyClaim.addEventListener("click", claimDailyGold);
   ui.newGame.addEventListener("click", resetGame);
   ui.closeSummary.addEventListener("click", () => {
     ui.modal.classList.add("hidden");
@@ -1520,6 +1637,8 @@ function gameText() {
     coordinateSystem: "Canvas 1280x720, origin top-left, x right, y down.",
     mode,
     gold: save.gold,
+    dailyGoldReady: dailyGoldReady(),
+    lastDailyGoldDate: save.lastDailyGoldDate,
     rankLevel: save.rankLevel,
     vatCount: save.vat.length,
     team: teamPlasmoids().map((p) => ({ name: p.name, type: p.type, hp: p.maxHp, attack: p.attack, defense: p.defense, speed: p.speed })),
