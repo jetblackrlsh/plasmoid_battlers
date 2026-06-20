@@ -2,7 +2,7 @@ const SAVE_KEY = "plasmoid-battlers-save-v1";
 const W = 1280;
 const H = 720;
 
-const TYPES = {
+const BASE_TYPE_CONFIGS = {
   Solar: { color: "#ffd447", dark: "#ff7b00", strong: "Volt" },
   Volt: { color: "#00d9ff", dark: "#1749ff", strong: "Toxic" },
   Toxic: { color: "#98ff45", dark: "#009a72", strong: "Lunar" },
@@ -11,7 +11,38 @@ const TYPES = {
   Frost: { color: "#9effff", dark: "#1389ff", strong: "Flare" },
 };
 
+const BASE_TYPES = Object.fromEntries(Object.entries(BASE_TYPE_CONFIGS).map(([name, config]) => [
+  name,
+  { ...config, label: name, parts: [name], slug: name.toLowerCase() },
+]));
+const BASE_TYPE_NAMES = Object.keys(BASE_TYPES);
+const HYBRID_TYPES = {};
+
+for (let i = 0; i < BASE_TYPE_NAMES.length; i++) {
+  for (let j = i + 1; j < BASE_TYPE_NAMES.length; j++) {
+    const first = BASE_TYPE_NAMES[i];
+    const second = BASE_TYPE_NAMES[j];
+    const key = `${first}-${second}`;
+    HYBRID_TYPES[key] = {
+      label: `${first}/${second}`,
+      parts: [first, second],
+      slug: `${first.toLowerCase()}-${second.toLowerCase()}`,
+      color: mixHexColors([BASE_TYPES[first].color, BASE_TYPES[second].color], 0.62),
+      dark: mixHexColors([BASE_TYPES[first].dark, BASE_TYPES[second].dark], 0.45),
+    };
+  }
+}
+
+const TYPES = { ...BASE_TYPES, ...HYBRID_TYPES };
 const TYPE_NAMES = Object.keys(TYPES);
+const POWER_EFFECTS = {
+  Solar: { name: "Solar Flare", bonus: 8, color: "#ffd447", text: "sears for bonus damage" },
+  Volt: { name: "Volt Surge", bonus: 6, color: "#00d9ff", text: "jolts defense down" },
+  Toxic: { name: "Toxic Bloom", bonus: 5, color: "#98ff45", text: "melts defense down" },
+  Lunar: { name: "Lunar Drain", bonus: 5, color: "#7c4dff", text: "drains health back" },
+  Flare: { name: "Flare Break", bonus: 9, color: "#ff4fd8", text: "erupts for bonus damage" },
+  Frost: { name: "Frost Lock", bonus: 5, color: "#9effff", text: "slows the target" },
+};
 const MISSION_DEFS = [
   {
     type: "complete_battles",
@@ -117,6 +148,21 @@ const SPRITES = {
   Lunar: "assets/art/sprite-lunar.png",
   Flare: "assets/art/sprite-flare.png",
   Frost: "assets/art/sprite-frost.png",
+  "Solar-Volt": "assets/art/sprite-solar-volt.png",
+  "Solar-Toxic": "assets/art/sprite-solar-toxic.png",
+  "Solar-Lunar": "assets/art/sprite-solar-lunar.png",
+  "Solar-Flare": "assets/art/sprite-solar-flare.png",
+  "Solar-Frost": "assets/art/sprite-solar-frost.png",
+  "Volt-Toxic": "assets/art/sprite-volt-toxic.png",
+  "Volt-Lunar": "assets/art/sprite-volt-lunar.png",
+  "Volt-Flare": "assets/art/sprite-volt-flare.png",
+  "Volt-Frost": "assets/art/sprite-volt-frost.png",
+  "Toxic-Lunar": "assets/art/sprite-toxic-lunar.png",
+  "Toxic-Flare": "assets/art/sprite-toxic-flare.png",
+  "Toxic-Frost": "assets/art/sprite-toxic-frost.png",
+  "Lunar-Flare": "assets/art/sprite-lunar-flare.png",
+  "Lunar-Frost": "assets/art/sprite-lunar-frost.png",
+  "Flare-Frost": "assets/art/sprite-flare-frost.png",
 };
 
 const canvas = document.getElementById("game-canvas");
@@ -141,6 +187,8 @@ const ui = {
   plannedRanked: document.getElementById("planned-ranked-btn"),
   riskToggle: document.getElementById("risk-toggle"),
   riskStatus: document.getElementById("risk-status"),
+  powerToggle: document.getElementById("power-toggle"),
+  powerStatus: document.getElementById("power-status"),
   setupChart: document.getElementById("setup-chart-btn"),
   battleChart: document.getElementById("battle-chart-btn"),
   battlePowerSummary: document.getElementById("battle-power-summary"),
@@ -202,6 +250,8 @@ function defaultProfile() {
     riskBattles: 0,
     riskCaptures: 0,
     riskLosses: 0,
+    powerBattles: 0,
+    powerHits: 0,
     wins: 0,
     losses: 0,
     plasmoidsDefeated: 0,
@@ -258,6 +308,36 @@ function loadSave() {
 
 function persist() {
   localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+}
+
+function mixHexColors(colors, brightness = 0.5) {
+  const channels = colors.map((color) => color.replace("#", "").match(/.{2}/g).map((part) => parseInt(part, 16)));
+  const mixed = [0, 1, 2].map((index) => {
+    const average = channels.reduce((total, channel) => total + channel[index], 0) / channels.length;
+    const lifted = average + (255 - average) * brightness;
+    return Math.max(0, Math.min(255, Math.round(lifted))).toString(16).padStart(2, "0");
+  });
+  return `#${mixed.join("")}`;
+}
+
+function typeInfo(type) {
+  return TYPES[type] || BASE_TYPES.Solar;
+}
+
+function typeLabel(type) {
+  return typeInfo(type).label;
+}
+
+function typeParts(type) {
+  return typeInfo(type).parts || [type];
+}
+
+function strongTypes(type) {
+  return [...new Set(typeParts(type).map((part) => BASE_TYPES[part]?.strong).filter(Boolean))];
+}
+
+function strongLabel(type) {
+  return strongTypes(type).join(", ");
 }
 
 function todayKey(date = new Date()) {
@@ -471,8 +551,9 @@ function battleLabel(source = battle) {
   if (!source) return "Battle";
   const ladder = source.ranked ? "Ranked" : "Unranked";
   const risk = source.risk ? " Risk" : "";
+  const power = source.power ? " Power" : "";
   const modeName = source.kind === "planned" ? "Planned" : "Blind";
-  return `${ladder}${risk} ${modeName} Battle`;
+  return `${ladder}${risk}${power} ${modeName} Battle`;
 }
 
 function sanitizeCapturedPlasmoid(p) {
@@ -532,9 +613,16 @@ function battleReadyEnemyTeam(enemyTeam) {
 }
 
 function typeMultiplier(attacker, defender) {
-  if (TYPES[attacker.type].strong === defender.type) return 2;
-  if (TYPES[defender.type].strong === attacker.type) return 0.5;
-  return 1;
+  const attackerParts = typeParts(attacker.type);
+  const defenderParts = typeParts(defender.type);
+  let multiplier = 1;
+  attackerParts.forEach((attackType) => {
+    defenderParts.forEach((defendType) => {
+      if (BASE_TYPES[attackType]?.strong === defendType) multiplier *= 2;
+      if (BASE_TYPES[defendType]?.strong === attackType) multiplier *= 0.5;
+    });
+  });
+  return multiplier;
 }
 
 function calculateDamage(attacker, defender) {
@@ -547,9 +635,13 @@ function riskSelected() {
   return Boolean(ui.riskToggle?.checked && save.vat.length >= 6);
 }
 
+function powerSelected() {
+  return Boolean(ui.powerToggle?.checked);
+}
+
 function startBlindBattle(ranked = false) {
   plannedBattle = null;
-  startBattle({ kind: "blind", ranked, risk: riskSelected() });
+  startBattle({ kind: "blind", ranked, risk: riskSelected(), power: powerSelected() });
 }
 
 function beginPlannedBattle(ranked = false) {
@@ -565,6 +657,7 @@ function beginPlannedBattle(ranked = false) {
     selection: save.team.slice(0, 3),
     ranked,
     risk: riskSelected(),
+    power: powerSelected(),
   };
   while (plannedBattle.selection.length < 3) {
     const next = save.vat.find((p) => !plannedBattle.selection.includes(p.id));
@@ -592,13 +685,14 @@ function startPlannedBattle() {
     kind: "planned",
     ranked: plannedBattle.ranked,
     risk: plannedBattle.risk,
+    power: plannedBattle.power,
     teamIds: plannedBattle.selection,
     enemyTeam: plannedBattle.enemy,
   });
   plannedBattle = null;
 }
 
-function startBattle({ kind = "blind", ranked = false, risk = false, teamIds = save.team, enemyTeam = null } = {}) {
+function startBattle({ kind = "blind", ranked = false, risk = false, power = false, teamIds = save.team, enemyTeam = null } = {}) {
   const team = teamIds.map((id) => save.vat.find((p) => p.id === id)).filter(Boolean);
   if (team.length !== 3) {
     notify("Pick a team of three Plasmoids first.");
@@ -615,6 +709,7 @@ function startBattle({ kind = "blind", ranked = false, risk = false, teamIds = s
     kind,
     ranked,
     risk,
+    power,
     playerIds: teamIds.slice(0, 3),
     playerBasePower: teamPower(team),
     enemyBasePower: teamPower(enemy),
@@ -636,6 +731,7 @@ function startBattle({ kind = "blind", ranked = false, risk = false, teamIds = s
       rankDelta: 0,
       riskCaptured: 0,
       riskLost: 0,
+      powerHits: 0,
     },
     finished: false,
     result: null,
@@ -691,13 +787,61 @@ function playerAttack() {
   renderAll();
 }
 
+function rollPowerEffect(attacker) {
+  if (!battle?.power || Math.random() >= 0.5) return null;
+  const parts = typeParts(attacker.type);
+  const powerType = parts[randInt(0, parts.length - 1)];
+  return { type: powerType, ...POWER_EFFECTS[powerType] };
+}
+
+function applyPowerEffect(effect, attacker, target) {
+  if (!effect) return "";
+  if (effect.type === "Volt") {
+    target.defense = Math.max(1, target.defense - 1);
+    return " and lowers defense";
+  }
+  if (effect.type === "Toxic") {
+    target.defense = Math.max(1, target.defense - 2);
+    return " and corrodes defense";
+  }
+  if (effect.type === "Lunar") {
+    const recovered = Math.min(8, attacker.maxHp - attacker.hp);
+    attacker.hp += recovered;
+    return recovered ? ` and drains ${recovered} HP` : " and surges with lunar energy";
+  }
+  if (effect.type === "Frost") {
+    target.speed = Math.max(1, target.speed - 3);
+    return " and slows speed";
+  }
+  return ` and ${effect.text}`;
+}
+
 function resolveAttack(side) {
   const attacker = active(side);
   const target = side === "player" ? active("enemy") : active("player");
   if (!attacker || !target || attacker.defeated || target.defeated) return;
-  const damage = calculateDamage(attacker, target);
+  const powerEffect = rollPowerEffect(attacker);
+  const powerBonus = powerEffect ? powerEffect.bonus : 0;
+  const damage = calculateDamage(attacker, target) + powerBonus;
   target.hp = Math.max(0, target.hp - damage);
+  const powerText = powerEffect ? applyPowerEffect(powerEffect, attacker, target) : "";
   fx.push({ type: "attack", side, timer: 0, damage, x: side === "player" ? 790 : 380, y: 300 });
+  if (powerEffect) {
+    battle.stats.powerHits += 1;
+    save.profile.powerHits += 1;
+    fx.push({
+      type: "power",
+      side,
+      timer: 0,
+      damage,
+      powerType: powerEffect.type,
+      label: powerEffect.name,
+      color: powerEffect.color,
+      x: side === "player" ? 790 : 380,
+      y: 300,
+    });
+    playSfx(`power${powerEffect.type}`);
+  }
   if (side === "player") {
     battle.stats.damageDealt += damage;
     save.profile.damageDealt += damage;
@@ -707,7 +851,9 @@ function resolveAttack(side) {
     save.profile.damageTaken += damage;
   }
   const edge = typeMultiplier(attacker, target);
-  pushLog(`${attacker.name} hits ${target.name} for ${damage}${edge > 1 ? " with type advantage" : edge < 1 ? " through resistance" : ""}.`);
+  const matchupText = edge > 1 ? " with type advantage" : edge < 1 ? " through resistance" : "";
+  const powerLog = powerEffect ? `. ${powerEffect.name} triggers${powerText}` : "";
+  pushLog(`${attacker.name} hits ${target.name} for ${damage}${matchupText}${powerLog}.`);
   if (target.hp <= 0) defeatPlasmoid(side === "player" ? "enemy" : "player");
 }
 
@@ -763,6 +909,7 @@ function applyBattleConsequences() {
     save.profile.riskLosses += lostIds.length;
     normalizeTeamAfterVatChange();
   }
+  if (battle.power) save.profile.powerBattles += 1;
 }
 
 function checkBattleEnd() {
@@ -852,6 +999,7 @@ function showBattleSummary() {
     ["Rank Change", stats.rankDelta > 0 ? `+${stats.rankDelta}` : stats.rankDelta],
     ["Risk Captures", stats.riskCaptured],
     ["Risk Losses", stats.riskLost],
+    ["Power Hits", stats.powerHits],
     ["Forfeited", stats.forfeited ? "Yes" : "No"],
     ["Battle Time", formatTime(stats.elapsedMs)],
   ].map(([label, value]) => `<div><strong>${value}</strong>${label}</div>`).join("");
@@ -954,6 +1102,7 @@ function renderAll() {
   renderDaily();
   renderMissions();
   renderRiskOptions();
+  renderPowerOptions();
   renderBattleControls();
   renderPlannedSetup();
   renderManagement();
@@ -1049,6 +1198,22 @@ function renderRiskOptions() {
     : `Requires 6+ Plasmoids (${save.vat.length}/6).`;
 }
 
+function renderPowerOptions() {
+  if (!ui.powerToggle) return;
+  if (plannedBattle && !battle) {
+    ui.powerToggle.disabled = true;
+    ui.powerToggle.checked = plannedBattle.power;
+    ui.powerStatus.textContent = plannedBattle.power
+      ? "Power rules locked for this scouted battle."
+      : "Standard power rules locked for this scouted battle.";
+    return;
+  }
+  ui.powerToggle.disabled = Boolean(battle);
+  ui.powerStatus.textContent = battle
+    ? "Power rules are locked while a battle is active."
+    : "Each attack has a 50% chance to trigger a type power.";
+}
+
 function renderBattleControls() {
   ui.attack.classList.remove("attack-advantage", "attack-disadvantage");
   if (!battle || battle.finished) {
@@ -1091,7 +1256,7 @@ function renderPlannedSetup() {
   }
   ui.plannedEnemyList.innerHTML = plannedBattle.enemy.map((p) => plasmoidCardHtml(p, {
     showButton: false,
-    mark: `${TYPES[p.type].strong} target`,
+    mark: `${strongLabel(p.type)} target`,
   })).join("");
   const selected = plannedBattle.selection
     .map((id) => save.vat.find((p) => p.id === id))
@@ -1103,7 +1268,7 @@ function renderPlannedSetup() {
   ].join("");
   ui.plannedTeamSlots.innerHTML = [0, 1, 2].map((index) => {
     const p = selected[index];
-    return `<div class="slot-card">${p ? `${escapeHtml(p.name)}<br>${p.type}` : "Open Slot"}</div>`;
+    return `<div class="slot-card">${p ? `${escapeHtml(p.name)}<br>${typeLabel(p.type)}` : "Open Slot"}</div>`;
   }).join("");
   ui.plannedVatList.innerHTML = save.vat.map((p) => {
     const inPlan = plannedBattle.selection.includes(p.id);
@@ -1150,17 +1315,17 @@ function renderManagement() {
   ui.teamPowerSummary.innerHTML = `<strong>Team Power ${Math.round(teamPower(team))}</strong><span>HP, attack, defense, and speed all contribute.</span>`;
   ui.teamSlots.innerHTML = [0, 1, 2].map((index) => {
     const p = team[index];
-    return `<div class="slot-card">${p ? `${escapeHtml(p.name)}<br>${p.type}` : "Empty Slot"}</div>`;
+    return `<div class="slot-card">${p ? `${escapeHtml(p.name)}<br>${typeLabel(p.type)}` : "Empty Slot"}</div>`;
   }).join("");
   ui.vatList.innerHTML = save.vat.map((p) => {
     const inTeam = save.team.includes(p.id);
     const selected = selectedVatId === p.id ? "outline: 3px solid #ff4fd8;" : "";
     return `
       <article class="plasmoid-card" style="${selected}">
-        <div class="plasmoid-chip" style="color:${TYPES[p.type].color}; background:${plasmoidGradient(p)}"></div>
+        <div class="plasmoid-chip" style="color:${typeInfo(p.type).color}; background:${plasmoidGradient(p)}"></div>
         <div>
           <div class="plasmoid-name">${escapeHtml(p.name)} ${inTeam ? "★" : ""}</div>
-          <div class="plasmoid-meta">${p.rank} ${p.type}<br>HP ${p.maxHp} · ATK ${p.attack} · DEF ${p.defense} · SPD ${p.speed}</div>
+          <div class="plasmoid-meta">${p.rank} ${typeLabel(p.type)}<br>HP ${p.maxHp} · ATK ${p.attack} · DEF ${p.defense} · SPD ${p.speed}</div>
         </div>
         <button class="mini-btn" type="button" data-team="${p.id}">${inTeam ? "Remove" : "Add"}</button>
       </article>`;
@@ -1184,6 +1349,8 @@ function renderProfile() {
     ["Risk Battles", p.riskBattles],
     ["Risk Captures", p.riskCaptures],
     ["Risk Losses", p.riskLosses],
+    ["Power Battles", p.powerBattles],
+    ["Power Hits", p.powerHits],
     ["Wins", p.wins],
     ["Win Rate", winRate],
     ["Plasmoids Defeated", p.plasmoidsDefeated],
@@ -1203,11 +1370,11 @@ function renderProfile() {
 
 function renderHowTo() {
   if (!ui.typeChart) return;
-  const chartHtml = TYPE_NAMES.map((type) => {
-    const strong = TYPES[type].strong;
+  const chartHtml = BASE_TYPE_NAMES.map((type) => {
+    const strong = BASE_TYPES[type].strong;
     return `
       <div class="type-row">
-        <span class="type-swatch" style="background:${TYPES[type].color}; box-shadow:0 0 14px ${TYPES[type].color}"></span>
+        <span class="type-swatch" style="background:${BASE_TYPES[type].color}; box-shadow:0 0 14px ${BASE_TYPES[type].color}"></span>
         <strong>${type}</strong>
         <span>deals double damage to ${strong} and takes half damage back from ${strong}.</span>
       </div>`;
@@ -1224,10 +1391,10 @@ function plasmoidCardHtml(p, options = {}) {
     : `<button class="mini-btn" type="button" ${options.buttonAttr || ""}>${escapeHtml(options.buttonLabel || "Select")}</button>`;
   return `
     <article class="plasmoid-card" style="${selected}">
-      <div class="plasmoid-chip" style="color:${TYPES[p.type].color}; background:${plasmoidGradient(p)}"></div>
+      <div class="plasmoid-chip" style="color:${typeInfo(p.type).color}; background:${plasmoidGradient(p)}"></div>
       <div>
         <div class="plasmoid-name">${escapeHtml(p.name)} ${marker}</div>
-        <div class="plasmoid-meta">${p.rank} ${p.type}<br>HP ${p.maxHp} - ATK ${p.attack} - DEF ${p.defense} - SPD ${p.speed}</div>
+        <div class="plasmoid-meta">${p.rank} ${typeLabel(p.type)}<br>HP ${p.maxHp} - ATK ${p.attack} - DEF ${p.defense} - SPD ${p.speed}</div>
       </div>
       ${button}
     </article>`;
@@ -1237,10 +1404,10 @@ function plasmoidSummaryHtml(p, title) {
   return `
     <h2>${escapeHtml(title)}</h2>
     <article class="plasmoid-card">
-      <div class="plasmoid-chip" style="color:${TYPES[p.type].color}; background:${plasmoidGradient(p)}"></div>
+      <div class="plasmoid-chip" style="color:${typeInfo(p.type).color}; background:${plasmoidGradient(p)}"></div>
       <div>
         <div class="plasmoid-name">${escapeHtml(p.name)}</div>
-        <div class="plasmoid-meta">${p.rank} ${p.type}<br>HP ${p.maxHp} · ATK ${p.attack} · DEF ${p.defense} · SPD ${p.speed}</div>
+        <div class="plasmoid-meta">${p.rank} ${typeLabel(p.type)}<br>HP ${p.maxHp} · ATK ${p.attack} · DEF ${p.defense} · SPD ${p.speed}</div>
       </div>
     </article>`;
 }
@@ -1317,11 +1484,11 @@ function renderProfileScene() {
 
 function renderHowToScene() {
   drawBackground("home");
-  drawTitle("How To Play", "Build for type coverage, speed, and smart switches");
+  drawTitle("How To Play", "Build for hybrids, power rules, speed, and smart switches");
   const cards = [
-    ["Scout", "See the rival trio"],
-    ["Speed", "Strike before rivals"],
-    ["Switch", "Counter bad matchups"],
+    ["Hybrids", "Two type matchups"],
+    ["Power", "50% type bursts"],
+    ["Rewards", "Daily gold missions"],
   ];
   ctx.save();
   ctx.textAlign = "center";
@@ -1432,9 +1599,9 @@ function drawBattleHoverTooltip() {
   const lines = [
     side,
     `${p.name}`,
-    `Type: ${p.type}`,
+    `Type: ${typeLabel(p.type)}`,
     `Speed: ${p.speed}`,
-    `Strong vs ${TYPES[p.type].strong}`,
+    `Strong vs ${strongLabel(p.type)}`,
   ];
   const width = 230;
   const height = 128;
@@ -1443,11 +1610,11 @@ function drawBattleHoverTooltip() {
   ctx.save();
   ctx.fillStyle = "rgba(23,21,44,0.9)";
   ctx.shadowBlur = 22;
-  ctx.shadowColor = TYPES[p.type].color;
+  ctx.shadowColor = typeInfo(p.type).color;
   roundRect(x, y, width, height, 8, true);
   ctx.shadowBlur = 0;
   ctx.textAlign = "left";
-  ctx.fillStyle = TYPES[p.type].color;
+  ctx.fillStyle = typeInfo(p.type).color;
   ctx.font = "900 18px Inter, sans-serif";
   ctx.fillText(lines[0], x + 14, y + 27);
   ctx.fillStyle = "#fff";
@@ -1475,7 +1642,7 @@ function wrapText(text, x, y, maxWidth, lineHeight) {
 }
 
 function drawPlasmoid(p, x, y, radius, featured) {
-  const type = TYPES[p.type];
+  const type = typeInfo(p.type);
   ctx.save();
   ctx.translate(x, y);
   const wobble = 1 + Math.sin(t * 3 + p.seed) * 0.04;
@@ -1530,7 +1697,7 @@ function drawBench(p, x, y, selected, mirror = false) {
   ctx.fillStyle = "#fff";
   ctx.font = "800 15px Inter, sans-serif";
   const labelX = mirror ? x - 46 : x + 46;
-  ctx.fillText(`${p.type} ${Math.max(0, p.hp)}/${p.maxHp}`, labelX, y + 5);
+  ctx.fillText(`${typeLabel(p.type)} ${Math.max(0, p.hp)}/${p.maxHp}`, labelX, y + 5);
   ctx.restore();
 }
 
@@ -1549,6 +1716,85 @@ function drawHealthBar(x, y, width, hp, maxHp, name) {
   ctx.restore();
 }
 
+function drawPowerEffect(effect, life) {
+  const x = effect.x;
+  const y = effect.y;
+  const pulse = 1 + life * 1.8;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = effect.color;
+  ctx.fillStyle = effect.color;
+  ctx.shadowBlur = 26;
+  ctx.shadowColor = effect.color;
+  ctx.lineWidth = Math.max(2, 8 * (1 - life));
+  if (effect.powerType === "Solar") {
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2 + t * 2;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * 24 * pulse, Math.sin(a) * 24 * pulse);
+      ctx.lineTo(Math.cos(a) * 86 * pulse, Math.sin(a) * 86 * pulse);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(0, 0, 52 * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (effect.powerType === "Volt") {
+    for (let i = 0; i < 5; i++) {
+      ctx.beginPath();
+      ctx.moveTo(-80 + i * 36, -70);
+      ctx.lineTo(-40 + i * 32, -12 + Math.sin(t * 20 + i) * 14);
+      ctx.lineTo(-74 + i * 36, 58);
+      ctx.stroke();
+    }
+  } else if (effect.powerType === "Toxic") {
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2 + t;
+      const r = 22 + i * 5 + life * 65;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * r, Math.sin(a) * r, 9 + (i % 3) * 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (effect.powerType === "Lunar") {
+    ctx.lineCap = "round";
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.arc(0, 0, 48 + i * 18 + life * 54, -1.1 + i * 0.28, 1.25 + i * 0.24);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(20, -10, 42 * pulse, -1.2, 1.8);
+    ctx.stroke();
+  } else if (effect.powerType === "Flare") {
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2 - life * 2.5;
+      ctx.beginPath();
+      ctx.ellipse(Math.cos(a) * 46 * pulse, Math.sin(a) * 30 * pulse, 14, 46, a, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  } else if (effect.powerType === "Frost") {
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a) * 90 * pulse, Math.sin(a) * 90 * pulse);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * 54 * pulse, Math.sin(a) * 54 * pulse);
+      ctx.lineTo(Math.cos(a + 0.28) * 70 * pulse, Math.sin(a + 0.28) * 70 * pulse);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+  ctx.save();
+  ctx.fillStyle = "#fff";
+  ctx.shadowBlur = 16;
+  ctx.shadowColor = effect.color;
+  ctx.font = "900 28px Inter, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(effect.label, x, y - 112 - life * 52);
+  ctx.restore();
+}
+
 function drawFx() {
   for (const effect of fx) {
     const life = Math.min(1, effect.timer / 0.8);
@@ -1564,6 +1810,8 @@ function drawFx() {
       ctx.fillStyle = "#fff";
       ctx.font = "900 42px Inter, sans-serif";
       ctx.fillText(`-${effect.damage}`, effect.x, effect.y - life * 90);
+    } else if (effect.type === "power") {
+      drawPowerEffect(effect, life);
     } else if (effect.type === "gold" || effect.type === "dailyGold" || effect.type === "missionGold") {
       ctx.fillStyle = "#ffd447";
       ctx.font = "900 64px Inter, sans-serif";
@@ -1613,7 +1861,7 @@ function roundRect(x, y, w, h, r, fill, stroke) {
 }
 
 function plasmoidGradient(p) {
-  const type = TYPES[p.type];
+  const type = typeInfo(p.type);
   return `radial-gradient(circle at 35% 28%, #fff 0 12%, ${type.color} 24%, ${type.dark} 70%, #17152c 100%)`;
 }
 
@@ -1680,20 +1928,27 @@ function playSfx(name) {
     blocked: [44, 43],
     battleStart: [55, 67, 74],
     reset: [84, 72, 60, 48],
+    powerSolar: [79, 84, 91, 96],
+    powerVolt: [88, 76, 91, 79, 96],
+    powerToxic: [50, 53, 57, 62],
+    powerLunar: [67, 74, 79, 86],
+    powerFlare: [72, 84, 88, 91],
+    powerFrost: [91, 86, 79, 74],
   };
   const notes = motifs[name] || motifs.nav;
   const start = audioCtx.currentTime;
+  const power = name.startsWith("power");
   notes.forEach((midi, i) => {
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
-    osc.type = i % 2 ? "square" : "triangle";
+    osc.type = power ? (i % 2 ? "sawtooth" : "square") : i % 2 ? "square" : "triangle";
     osc.frequency.value = 440 * 2 ** ((midi - 69) / 12);
     gain.gain.setValueAtTime(0, start + i * 0.055);
-    gain.gain.linearRampToValueAtTime(0.13, start + i * 0.055 + 0.012);
-    gain.gain.exponentialRampToValueAtTime(0.001, start + i * 0.055 + 0.16);
+    gain.gain.linearRampToValueAtTime(power ? 0.17 : 0.13, start + i * 0.055 + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + i * 0.055 + (power ? 0.24 : 0.16));
     osc.connect(gain).connect(audioCtx.destination);
     osc.start(start + i * 0.055);
-    osc.stop(start + i * 0.055 + 0.18);
+    osc.stop(start + i * 0.055 + (power ? 0.28 : 0.18));
   });
 }
 
@@ -1804,25 +2059,29 @@ function gameText() {
     dailyMissions: ensureDailyMissions(),
     rankLevel: save.rankLevel,
     vatCount: save.vat.length,
-    team: teamPlasmoids().map((p) => ({ name: p.name, type: p.type, hp: p.maxHp, attack: p.attack, defense: p.defense, speed: p.speed })),
+    typeCount: TYPE_NAMES.length,
+    hybridTypes: TYPE_NAMES.filter((type) => typeParts(type).length === 2).map(typeLabel),
+    team: teamPlasmoids().map((p) => ({ name: p.name, type: p.type, label: typeLabel(p.type), hp: p.maxHp, attack: p.attack, defense: p.defense, speed: p.speed })),
     teamPower: Math.round(teamPower(teamPlasmoids())),
     plannedBattle: plannedBattle ? {
       ranked: plannedBattle.ranked,
       risk: plannedBattle.risk,
-      enemy: plannedBattle.enemy.map((p) => ({ name: p.name, type: p.type, hp: p.maxHp, attack: p.attack, defense: p.defense, speed: p.speed })),
+      power: plannedBattle.power,
+      enemy: plannedBattle.enemy.map((p) => ({ name: p.name, type: p.type, label: typeLabel(p.type), hp: p.maxHp, attack: p.attack, defense: p.defense, speed: p.speed })),
       enemyPower: Math.round(teamPower(plannedBattle.enemy)),
       selection: plannedBattle.selection
         .map((id) => save.vat.find((p) => p.id === id))
         .filter(Boolean)
-        .map((p) => ({ name: p.name, type: p.type, hp: p.maxHp, attack: p.attack, defense: p.defense, speed: p.speed })),
+        .map((p) => ({ name: p.name, type: p.type, label: typeLabel(p.type), hp: p.maxHp, attack: p.attack, defense: p.defense, speed: p.speed })),
     } : null,
     battle: battle ? {
       kind: battle.kind,
       ranked: battle.ranked,
       risk: battle.risk,
+      power: battle.power,
       label: battleLabel(),
-      activePlayer: active("player") ? { name: active("player").name, type: active("player").type, hp: active("player").hp, maxHp: active("player").maxHp } : null,
-      activeEnemy: active("enemy") ? { name: active("enemy").name, type: active("enemy").type, hp: active("enemy").hp, maxHp: active("enemy").maxHp } : null,
+      activePlayer: active("player") ? { name: active("player").name, type: active("player").type, label: typeLabel(active("player").type), hp: active("player").hp, maxHp: active("player").maxHp } : null,
+      activeEnemy: active("enemy") ? { name: active("enemy").name, type: active("enemy").type, label: typeLabel(active("enemy").type), hp: active("enemy").hp, maxHp: active("enemy").maxHp } : null,
       playerPower: Math.round(teamPower(battle.player)),
       enemyPower: Math.round(teamPower(battle.enemy)),
       playerRemaining: livingIndexes(battle.player).length,
