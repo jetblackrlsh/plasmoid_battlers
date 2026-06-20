@@ -41,6 +41,7 @@
           <button class="mode-tab" type="button" data-mode="missions">Missions</button>
           <button class="mode-tab" type="button" data-mode="battle">Battle</button>
           <button class="mode-tab" type="button" data-mode="gacha">Gacha</button>
+          <button class="mode-tab" type="button" data-mode="fusion">Fusion</button>
           <button class="mode-tab" type="button" data-mode="manage">Manage</button>
           <button class="mode-tab" type="button" data-mode="howto">How To</button>
           <button class="mode-tab" type="button" data-mode="profile">Profile</button>
@@ -53,6 +54,7 @@
             <button class="primary-action daily-action" type="button" data-mode="daily">Claim Daily Gold</button>
             <button class="primary-action mission-action" type="button" data-mode="missions">Daily Missions</button>
             <button class="primary-action" type="button" data-mode="gacha">Use UAP Dogwhistle</button>
+            <button id="home-fusion-btn" class="primary-action fusion-action" type="button" data-mode="fusion">Fusion Mode</button>
             <button class="primary-action" type="button" data-mode="manage">Manage Team</button>
             <button class="primary-action" type="button" data-mode="howto">How To Play</button>
             <button class="primary-action" type="button" data-mode="profile">Player Profile</button>
@@ -135,6 +137,21 @@
           <div id="summon-result" class="result-card hidden"></div>
         </div>
 
+        <div id="panel-fusion" class="panel">
+          <div class="fusion-board">
+            <img class="fusion-art" src="assets/art/fusion.png" alt="Two glowing Plasmoids merging inside a neon aurora fusion chamber">
+            <div class="fusion-header">
+              <h2>Fusion Mode</h2>
+              <p class="mode-copy">Fuse two different non-hybrid Plasmoids into a new hybrid. Fusion costs 6 gold, consumes both source Plasmoids, and averages their stats.</p>
+              <div id="fusion-status" class="fusion-status"></div>
+            </div>
+            <div id="fusion-selected" class="fusion-selected"></div>
+            <button id="fusion-btn" class="primary-action fusion-action" type="button">Fuse Plasmoids - 6 Gold</button>
+            <div id="fusion-list" class="vat-list"></div>
+            <div id="fusion-result" class="result-card hidden"></div>
+          </div>
+        </div>
+
         <div id="panel-manage" class="panel">
           <p class="mode-copy">Choose exactly three Plasmoids for your active battle team.</p>
           <div id="team-power-summary" class="power-summary"></div>
@@ -180,6 +197,11 @@
               <h2>Gold And Rewards</h2>
               <p>Defeating a rival Plasmoid earns 1 gold. Daily Gold gives 3 free gold once per day, and Daily Missions offer three new gold objectives each day.</p>
               <p>The UAP Dogwhistle costs 3 gold and can summon base or hybrid Plasmoids. The Twin Tone Whistle costs 6 gold and guarantees a random hybrid Plasmoid. Ranked wins raise your rank level; ranked losses lower it.</p>
+            </article>
+            <article class="guide-card">
+              <h2>Fusion Mode</h2>
+              <p>Fusion Mode unlocks when your vat has at least 6 Plasmoids.</p>
+              <p>Spend 6 gold to fuse two different non-hybrid Plasmoids into their hybrid type. The source Plasmoids are consumed, and the new hybrid gets averaged HP, attack, defense, and speed.</p>
             </article>
             <article class="guide-card">
               <h2>Risk Rules</h2>

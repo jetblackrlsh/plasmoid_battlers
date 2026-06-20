@@ -125,6 +125,7 @@ const MUSIC = {
   missions: "Music/Plasmoid%20Mission%20Briefing.mp3",
   battle: "Music/Plasmoid%20Battle%20Anthem.mp3",
   gacha: "Music/Summoning%20the%20Plasmoids.mp3",
+  fusion: "Music/Plasmoid%20Fusion%20Reactor.mp3",
   manage: "Music/Plasmoid%20Management%20Mode.mp3",
   profile: "Music/Battler%20Profile%20Hub.mp3",
   howto: "Music/Plasmoid%20Battlers%20Home.mp3",
@@ -137,6 +138,7 @@ const ART = {
   daily: "assets/art/daily-gold.png",
   missions: "assets/art/daily-missions.png",
   gacha: "assets/art/summon.png",
+  fusion: "assets/art/fusion.png",
   victory: "assets/art/victory.png",
   defeat: "assets/art/defeat.png",
   typeChart: "assets/art/type-chart.png",
@@ -182,6 +184,7 @@ const ui = {
   dailyClaim: document.getElementById("daily-claim-btn"),
   missionSummary: document.getElementById("mission-summary"),
   missionList: document.getElementById("mission-list"),
+  homeFusion: document.getElementById("home-fusion-btn"),
   blindBattle: document.getElementById("blind-battle-btn"),
   blindRanked: document.getElementById("blind-ranked-btn"),
   plannedBattle: document.getElementById("planned-battle-btn"),
@@ -208,6 +211,11 @@ const ui = {
   summon: document.getElementById("summon-btn"),
   twinTone: document.getElementById("twin-tone-btn"),
   summonResult: document.getElementById("summon-result"),
+  fusionStatus: document.getElementById("fusion-status"),
+  fusionSelected: document.getElementById("fusion-selected"),
+  fusionButton: document.getElementById("fusion-btn"),
+  fusionList: document.getElementById("fusion-list"),
+  fusionResult: document.getElementById("fusion-result"),
   teamSlots: document.getElementById("team-slots"),
   teamPowerSummary: document.getElementById("team-power-summary"),
   vatList: document.getElementById("vat-list"),
@@ -238,6 +246,7 @@ let battle = null;
 let plannedBattle = null;
 let lastFrame = performance.now();
 let selectedVatId = null;
+let fusionSelection = [];
 let pointer = { x: -9999, y: -9999 };
 const fx = [];
 
@@ -260,6 +269,7 @@ function defaultProfile() {
     goldEarned: 0,
     dailyClaims: 0,
     missionClaims: 0,
+    fusions: 0,
     attacks: 0,
     damageDealt: 0,
     damageTaken: 0,
@@ -334,12 +344,25 @@ function typeParts(type) {
   return typeInfo(type).parts || [type];
 }
 
+function isHybridType(type) {
+  return typeParts(type).length > 1;
+}
+
 function strongTypes(type) {
   return [...new Set(typeParts(type).map((part) => BASE_TYPES[part]?.strong).filter(Boolean))];
 }
 
 function strongLabel(type) {
   return strongTypes(type).join(", ");
+}
+
+function hybridTypeFor(firstType, secondType) {
+  const parts = [firstType, secondType];
+  if (parts.some((type) => !BASE_TYPES[type]) || firstType === secondType) return "";
+  return Object.keys(HYBRID_TYPES).find((type) => {
+    const hybridParts = typeParts(type);
+    return parts.every((part) => hybridParts.includes(part));
+  }) || "";
 }
 
 function todayKey(date = new Date()) {
@@ -1046,6 +1069,99 @@ function summonTwinTonePlasmoid() {
   });
 }
 
+function canAccessFusion() {
+  return save.vat.length >= 6;
+}
+
+function fusionCandidates() {
+  return save.vat.filter((p) => !isHybridType(p.type));
+}
+
+function selectedFusionPlasmoids() {
+  return fusionSelection
+    .map((id) => save.vat.find((p) => p.id === id))
+    .filter(Boolean);
+}
+
+function fusionReady() {
+  const selected = selectedFusionPlasmoids();
+  return selected.length === 2
+    && canAccessFusion()
+    && save.gold >= 6
+    && Boolean(hybridTypeFor(selected[0].type, selected[1].type));
+}
+
+function toggleFusionSelection(id) {
+  if (!canAccessFusion()) {
+    notify("Fusion Mode unlocks at 6 Plasmoids.");
+    playSfx("blocked");
+    return;
+  }
+  const target = save.vat.find((p) => p.id === id);
+  if (!target || isHybridType(target.type)) return;
+  if (fusionSelection.includes(id)) {
+    fusionSelection = fusionSelection.filter((selectedId) => selectedId !== id);
+    playSfx("removeTeam");
+  } else {
+    if (fusionSelection.length >= 2) fusionSelection.shift();
+    fusionSelection.push(id);
+    playSfx("addTeam");
+  }
+  ui.fusionResult?.classList.add("hidden");
+  renderAll();
+}
+
+function fuseSelectedPlasmoids() {
+  if (!canAccessFusion()) {
+    notify("Fusion Mode requires at least 6 Plasmoids in your vat.");
+    playSfx("blocked");
+    return;
+  }
+  const selected = selectedFusionPlasmoids();
+  if (selected.length !== 2) {
+    notify("Choose two non-hybrid Plasmoids to fuse.");
+    playSfx("blocked");
+    return;
+  }
+  const hybridType = hybridTypeFor(selected[0].type, selected[1].type);
+  if (!hybridType) {
+    notify("Fusion needs two different base types.");
+    playSfx("blocked");
+    return;
+  }
+  if (save.gold < 6) {
+    notify("You need 6 gold for Fusion Mode.");
+    playSfx("blocked");
+    return;
+  }
+  const seed = Math.round((selected[0].seed + selected[1].seed) / 2) + randInt(1, 9999);
+  const fused = createPlasmoid({
+    type: hybridType,
+    name: `${selected[0].name.split(" ")[0]} ${selected[1].name.split(" ").slice(-1)[0]}`,
+    rank: selected.some((p) => p.rank === "Prismatic") ? "Rare" : selected.some((p) => p.rank === "Rare") ? "Rare" : "Common",
+    seed,
+    maxHp: Math.round((selected[0].maxHp + selected[1].maxHp) / 2),
+    attack: Math.round((selected[0].attack + selected[1].attack) / 2),
+    defense: Math.round((selected[0].defense + selected[1].defense) / 2),
+    speed: Math.round((selected[0].speed + selected[1].speed) / 2),
+  });
+  const consumed = new Set(selected.map((p) => p.id));
+  save.gold -= 6;
+  save.vat = save.vat.filter((p) => !consumed.has(p.id));
+  save.vat.push(fused);
+  save.profile.fusions += 1;
+  selectedVatId = fused.id;
+  fusionSelection = [];
+  normalizeTeamAfterVatChange();
+  persist();
+  playSfx("summon");
+  fx.push({ type: "summon", timer: 0, x: 640, y: 330 });
+  ui.fusionResult.classList.remove("hidden");
+  ui.fusionResult.innerHTML = plasmoidSummaryHtml(fused, "Fusion Complete");
+  notify(`${fused.name} emerged as ${typeLabel(fused.type)}.`);
+  renderAll();
+}
+
 function claimDailyGold() {
   if (!dailyGoldReady()) {
     notify(`Daily gold refreshes in ${nextDailyResetLabel()}.`);
@@ -1090,6 +1206,11 @@ function toggleTeam(id) {
 }
 
 function setMode(next) {
+  if (next === "fusion" && !canAccessFusion()) {
+    notify(`Fusion Mode unlocks at 6 Plasmoids (${save.vat.length}/6).`);
+    playSfx("blocked");
+    return;
+  }
   mode = next;
   ui.title.textContent = titleForMode(next);
   ui.tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.mode === next));
@@ -1106,6 +1227,7 @@ function titleForMode(value) {
     missions: "Daily Missions",
     battle: "Battle Mode",
     gacha: "Gacha Mode",
+    fusion: "Fusion Mode",
     manage: "Management Mode",
     profile: "Player Profile",
     howto: "How To Play",
@@ -1117,9 +1239,17 @@ function renderAll() {
   ui.rank.textContent = save.rankLevel;
   ui.summon.disabled = save.gold < 3;
   if (ui.twinTone) ui.twinTone.disabled = save.gold < 6;
+  ui.tabs
+    .filter((tab) => tab.dataset.mode === "fusion")
+    .forEach((tab) => {
+      tab.disabled = !canAccessFusion();
+      tab.title = canAccessFusion() ? "Fusion Mode" : `Requires 6 Plasmoids (${save.vat.length}/6)`;
+    });
+  if (ui.homeFusion) ui.homeFusion.disabled = !canAccessFusion();
   renderHome();
   renderDaily();
   renderMissions();
+  renderFusion();
   renderRiskOptions();
   renderPowerOptions();
   renderBattleControls();
@@ -1152,6 +1282,7 @@ function renderHome() {
     `<div><strong>Team Power:</strong> ${Math.round(teamPower(team))}</div>`,
     `<div><strong>Rank Level:</strong> ${save.rankLevel}</div>`,
     `<div><strong>Vat:</strong> ${save.vat.length} Plasmoids collected</div>`,
+    `<div><strong>Fusion:</strong> ${canAccessFusion() ? "Unlocked" : `${save.vat.length}/6 Plasmoids`}</div>`,
     `<div><strong>Record:</strong> ${save.profile.wins}W / ${save.profile.losses}L</div>`,
   ].join("");
 }
@@ -1196,6 +1327,49 @@ function renderMissions() {
   }).join("");
   [...ui.missionList.querySelectorAll("[data-mission-claim]")].forEach((button) => {
     button.addEventListener("click", () => claimMission(Number(button.dataset.missionClaim)));
+  });
+}
+
+function renderFusion() {
+  if (!ui.fusionStatus || !ui.fusionList) return;
+  fusionSelection = fusionSelection.filter((id) => save.vat.some((p) => p.id === id && !isHybridType(p.type)));
+  const selected = selectedFusionPlasmoids();
+  const candidates = fusionCandidates();
+  const selectedTypes = selected.map((p) => p.type);
+  const hybridType = selected.length === 2 ? hybridTypeFor(selected[0].type, selected[1].type) : "";
+  const ready = fusionReady();
+  const enoughVat = canAccessFusion();
+  const enoughGold = save.gold >= 6;
+  const statusLines = [];
+  if (!enoughVat) statusLines.push(`Fusion unlocks at 6 Plasmoids (${save.vat.length}/6).`);
+  else if (candidates.length < 2) statusLines.push("You need two non-hybrid Plasmoids.");
+  else if (!enoughGold) statusLines.push(`Fusion costs 6 gold (${save.gold}/6).`);
+  else if (selected.length < 2) statusLines.push("Choose two different base-type Plasmoids.");
+  else if (!hybridType) statusLines.push("Choose two different base types to create a hybrid.");
+  else statusLines.push(`Ready to create ${typeLabel(hybridType)} with averaged stats.`);
+  ui.fusionStatus.innerHTML = [
+    `<strong>${ready ? "Fusion ready" : "Fusion reactor waiting"}</strong>`,
+    `<span>${statusLines.join(" ")}</span>`,
+  ].join("");
+  ui.fusionSelected.innerHTML = [0, 1].map((index) => {
+    const p = selected[index];
+    return `<div class="slot-card">${p ? `${escapeHtml(p.name)}<br>${typeLabel(p.type)}` : `Source ${index + 1}`}</div>`;
+  }).join("");
+  ui.fusionButton.disabled = !ready;
+  ui.fusionButton.textContent = hybridType ? `Fuse ${typeLabel(hybridType)} - 6 Gold` : "Fuse Plasmoids - 6 Gold";
+  ui.fusionList.innerHTML = save.vat.map((p) => {
+    const isHybrid = isHybridType(p.type);
+    const selectedFusion = fusionSelection.includes(p.id);
+    const sameTypeBlocked = selectedTypes.length === 1 && selectedTypes[0] === p.type && !selectedFusion;
+    return plasmoidCardHtml(p, {
+      selected: selectedFusion,
+      buttonLabel: selectedFusion ? "Selected" : isHybrid ? "Hybrid" : sameTypeBlocked ? "Same Type" : "Choose",
+      buttonAttr: `data-fusion-source="${p.id}" ${isHybrid || sameTypeBlocked ? "disabled" : ""}`,
+      mark: selectedFusion ? "fusion source" : isHybrid ? "hybrid" : "",
+    });
+  }).join("");
+  [...ui.fusionList.querySelectorAll("[data-fusion-source]")].forEach((button) => {
+    button.addEventListener("click", () => toggleFusionSelection(button.dataset.fusionSource));
   });
 }
 
@@ -1376,6 +1550,7 @@ function renderProfile() {
     ["Gold Earned", p.goldEarned],
     ["Daily Claims", p.dailyClaims],
     ["Mission Claims", p.missionClaims],
+    ["Fusions", p.fusions],
     ["Summons", p.summons],
     ["Attacks", p.attacks],
     ["Switches", p.switches],
@@ -1454,6 +1629,7 @@ function render() {
   else if (mode === "daily") renderDailyScene();
   else if (mode === "missions") renderMissionsScene();
   else if (mode === "gacha") renderGachaScene();
+  else if (mode === "fusion") renderFusionScene();
   else if (mode === "manage") renderVatScene();
   else if (mode === "profile") renderProfileScene();
   else if (mode === "howto") renderHowToScene();
@@ -1489,6 +1665,22 @@ function renderGachaScene() {
   drawTitle("Aurora Whistles", subtitle);
 }
 
+function renderFusionScene() {
+  drawBackground("fusion");
+  const selected = selectedFusionPlasmoids();
+  const hybridType = selected.length === 2 ? hybridTypeFor(selected[0].type, selected[1].type) : "";
+  const subtitle = !canAccessFusion()
+    ? `Requires 6 Plasmoids (${save.vat.length}/6)`
+    : hybridType
+      ? `Fuse into ${typeLabel(hybridType)} for 6 gold`
+      : "Choose two different base Plasmoids";
+  drawTitle("Fusion Mode", subtitle);
+  selected.forEach((p, i) => drawPlasmoid(p, 415 + i * 450, 430 + Math.sin(t * 2 + i) * 10, 72, true));
+  if (hybridType) {
+    drawPlasmoid({ type: hybridType, name: "Fusion Preview", seed: 9090 }, 640, 390 + Math.sin(t * 2.4) * 10, 84, true);
+  }
+}
+
 function renderVatScene() {
   drawBackground("home");
   drawTitle("Plasmoid Vat", `${save.vat.length} collected • ${save.team.length}/3 on team`);
@@ -1511,8 +1703,8 @@ function renderHowToScene() {
   drawTitle("How To Play", "Build for hybrids, power rules, speed, and smart switches");
   const cards = [
     ["Hybrids", "Two type matchups"],
+    ["Fusion", "Two bases become one"],
     ["Power", "50% type bursts"],
-    ["Rewards", "Daily gold missions"],
   ];
   ctx.save();
   ctx.textAlign = "center";
@@ -1931,7 +2123,7 @@ function playMusic(track) {
   }
   currentMusic = new Audio(url);
   currentMusic.dataset.url = url;
-  currentMusic.loop = ["home", "daily", "missions", "battle", "gacha", "manage", "profile", "howto"].includes(track);
+  currentMusic.loop = ["home", "daily", "missions", "battle", "gacha", "fusion", "manage", "profile", "howto"].includes(track);
   currentMusic.volume = 0.38;
   currentMusic.play().catch(() => {});
 }
@@ -1982,6 +2174,7 @@ function resetGame() {
   battle = null;
   plannedBattle = null;
   selectedVatId = null;
+  fusionSelection = [];
   localStorage.setItem(SAVE_KEY, JSON.stringify(save));
   playSfx("reset");
   notify("New game started.");
@@ -2023,6 +2216,7 @@ function installEvents() {
   ui.forfeit.addEventListener("click", forfeitBattle);
   ui.summon.addEventListener("click", summonPlasmoid);
   ui.twinTone.addEventListener("click", summonTwinTonePlasmoid);
+  ui.fusionButton.addEventListener("click", fuseSelectedPlasmoids);
   ui.dailyClaim.addEventListener("click", claimDailyGold);
   ui.newGame.addEventListener("click", resetGame);
   ui.closeSummary.addEventListener("click", () => {
@@ -2088,6 +2282,12 @@ function gameText() {
     hybridTypes: TYPE_NAMES.filter((type) => typeParts(type).length === 2).map(typeLabel),
     team: teamPlasmoids().map((p) => ({ name: p.name, type: p.type, label: typeLabel(p.type), hp: p.maxHp, attack: p.attack, defense: p.defense, speed: p.speed })),
     teamPower: Math.round(teamPower(teamPlasmoids())),
+    fusion: {
+      unlocked: canAccessFusion(),
+      candidates: fusionCandidates().map((p) => ({ name: p.name, type: p.type, label: typeLabel(p.type) })),
+      selected: selectedFusionPlasmoids().map((p) => ({ name: p.name, type: p.type, label: typeLabel(p.type) })),
+      ready: fusionReady(),
+    },
     plannedBattle: plannedBattle ? {
       ranked: plannedBattle.ranked,
       risk: plannedBattle.risk,

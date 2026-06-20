@@ -265,6 +265,12 @@ h1 {
   box-shadow: 0 12px 28px rgba(124, 77, 255, 0.28), 0 0 26px rgba(255, 79, 216, 0.28);
 }
 
+.primary-action.fusion-action {
+  color: #fff;
+  background: linear-gradient(135deg, #ff4fd8, #ffd447 44%, #00d9ff);
+  box-shadow: 0 12px 28px rgba(255, 79, 216, 0.28), 0 0 26px rgba(0, 217, 255, 0.26);
+}
+
 @keyframes golden-attack-pulse {
   0%,
   100% {
@@ -321,7 +327,8 @@ h1 {
 }
 
 .daily-reward-art,
-.mission-art {
+.mission-art,
+.fusion-art {
   width: 100%;
   display: block;
   aspect-ratio: 16 / 9;
@@ -334,6 +341,10 @@ h1 {
 
 .mission-art {
   box-shadow: 0 18px 42px rgba(0, 217, 255, 0.2), 0 0 34px rgba(124, 77, 255, 0.24);
+}
+
+.fusion-art {
+  box-shadow: 0 18px 42px rgba(255, 79, 216, 0.22), 0 0 38px rgba(0, 217, 255, 0.28);
 }
 
 .daily-reward-copy,
@@ -382,7 +393,14 @@ h1 {
   gap: 12px;
 }
 
+.fusion-board {
+  display: grid;
+  gap: 12px;
+}
+
 .mission-header,
+.fusion-header,
+.fusion-status,
 .mission-card {
   padding: 12px;
   border: 1px solid rgba(23, 21, 44, 0.12);
@@ -395,7 +413,16 @@ h1 {
   gap: 10px;
 }
 
+.fusion-header {
+  display: grid;
+  gap: 10px;
+}
+
 .mission-header h2 {
+  font-size: 1.55rem;
+}
+
+.fusion-header h2 {
   font-size: 1.55rem;
 }
 
@@ -413,6 +440,26 @@ h1 {
 .mission-summary span {
   color: rgba(23, 21, 44, 0.68);
   font-size: 0.9rem;
+}
+
+.fusion-status {
+  display: grid;
+  gap: 4px;
+  background:
+    radial-gradient(circle at 10% 25%, rgba(255, 79, 216, 0.26), transparent 44%),
+    rgba(255, 255, 255, 0.76);
+  font-weight: 850;
+}
+
+.fusion-status span {
+  color: rgba(23, 21, 44, 0.68);
+  font-size: 0.9rem;
+}
+
+.fusion-selected {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
 .mission-list {
@@ -827,6 +874,7 @@ h1 {
   }
 
   .team-slots,
+  .fusion-selected,
   .battle-choice-row,
   .profile-grid,
   .summary-stats {
