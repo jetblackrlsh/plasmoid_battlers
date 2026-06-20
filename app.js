@@ -35,6 +35,7 @@ for (let i = 0; i < BASE_TYPE_NAMES.length; i++) {
 
 const TYPES = { ...BASE_TYPES, ...HYBRID_TYPES };
 const TYPE_NAMES = Object.keys(TYPES);
+const HYBRID_TYPE_NAMES = Object.keys(HYBRID_TYPES);
 const POWER_EFFECTS = {
   Solar: { name: "Solar Flare", bonus: 8, color: "#ffd447", text: "sears for bonus damage" },
   Volt: { name: "Volt Surge", bonus: 6, color: "#00d9ff", text: "jolts defense down" },
@@ -205,6 +206,7 @@ const ui = {
   switchButtons: document.getElementById("switch-buttons"),
   battleLog: document.getElementById("battle-log"),
   summon: document.getElementById("summon-btn"),
+  twinTone: document.getElementById("twin-tone-btn"),
   summonResult: document.getElementById("summon-result"),
   teamSlots: document.getElementById("team-slots"),
   teamPowerSummary: document.getElementById("team-power-summary"),
@@ -1007,14 +1009,21 @@ function showBattleSummary() {
   renderAll();
 }
 
-function summonPlasmoid() {
-  if (save.gold < 3) {
-    notify("You need 3 gold for the UAP Dogwhistle.");
+function summonPlasmoid(options = {}) {
+  const {
+    cost = 3,
+    whistleName = "UAP Dogwhistle",
+    hybridOnly = false,
+    resultTitle = "New Plasmoid Joined Your Vat",
+  } = options;
+  if (save.gold < cost) {
+    notify(`You need ${cost} gold for the ${whistleName}.`);
     playSfx("blocked");
     return;
   }
-  save.gold -= 3;
-  const summoned = createPlasmoid();
+  save.gold -= cost;
+  const type = hybridOnly ? HYBRID_TYPE_NAMES[randInt(0, HYBRID_TYPE_NAMES.length - 1)] : undefined;
+  const summoned = createPlasmoid({ type });
   save.vat.push(summoned);
   save.profile.summons += 1;
   addMissionProgress("summons", 1);
@@ -1023,9 +1032,18 @@ function summonPlasmoid() {
   playSfx("summon");
   fx.push({ type: "summon", timer: 0, x: 640, y: 330 });
   ui.summonResult.classList.remove("hidden");
-  ui.summonResult.innerHTML = plasmoidSummaryHtml(summoned, "New Plasmoid Joined Your Vat");
-  notify(`${summoned.name} answered the dogwhistle.`);
+  ui.summonResult.innerHTML = plasmoidSummaryHtml(summoned, resultTitle);
+  notify(`${summoned.name} answered the ${whistleName}.`);
   renderAll();
+}
+
+function summonTwinTonePlasmoid() {
+  summonPlasmoid({
+    cost: 6,
+    whistleName: "Twin Tone Whistle",
+    hybridOnly: true,
+    resultTitle: "Hybrid Plasmoid Joined Your Vat",
+  });
 }
 
 function claimDailyGold() {
@@ -1098,6 +1116,7 @@ function renderAll() {
   ui.gold.textContent = save.gold;
   ui.rank.textContent = save.rankLevel;
   ui.summon.disabled = save.gold < 3;
+  if (ui.twinTone) ui.twinTone.disabled = save.gold < 6;
   renderHome();
   renderDaily();
   renderMissions();
@@ -1462,7 +1481,12 @@ function renderMissionsScene() {
 
 function renderGachaScene() {
   drawBackground("gacha");
-  drawTitle("UAP Dogwhistle", save.gold >= 3 ? "A summon costs 3 gold" : "Win battles to earn more gold");
+  const subtitle = save.gold >= 6
+    ? "Twin Tone guarantees a hybrid for 6 gold"
+    : save.gold >= 3
+      ? "UAP Dogwhistle costs 3 gold"
+      : "Win battles to earn more gold";
+  drawTitle("Aurora Whistles", subtitle);
 }
 
 function renderVatScene() {
@@ -1998,6 +2022,7 @@ function installEvents() {
   ui.attack.addEventListener("click", playerAttack);
   ui.forfeit.addEventListener("click", forfeitBattle);
   ui.summon.addEventListener("click", summonPlasmoid);
+  ui.twinTone.addEventListener("click", summonTwinTonePlasmoid);
   ui.dailyClaim.addEventListener("click", claimDailyGold);
   ui.newGame.addEventListener("click", resetGame);
   ui.closeSummary.addEventListener("click", () => {
